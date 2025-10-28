@@ -3,6 +3,8 @@ import django_filters
 from django import forms
 from django.utils import timezone  # якщо реально використаєш
 from django.contrib.auth.models import User  # ← додано
+from crispy_forms.helper import FormHelper
+from crispy_forms.layout import Layout, Row, Column
 from .models import Shift, Direction, ShiftStatus, Agent
 
 
@@ -62,3 +64,21 @@ class ShiftFilter(django_filters.FilterSet):
             .distinct()
         )
         self.filters["team_lead"].field.queryset = User.objects.filter(id__in=list(tls_ids))
+
+        helper = getattr(self.form, "helper", None) or FormHelper(self.form)
+        helper.form_tag = False  # форму-обгортку малюємо вручну в шаблоні
+        helper.disable_csrf = True
+        helper.form_method = "get"
+        helper.layout = Layout(
+            Row(
+                Column("team_lead", css_class="col-md-3 col-sm-6"),
+                Column("agent", css_class="col-md-3 col-sm-6"),
+                Column("direction", css_class="col-md-3 col-sm-6"),
+                Column("status", css_class="col-md-3 col-sm-6"),
+            ),
+            Row(
+                Column("start__gte", css_class="col-md-3 col-sm-6"),
+                Column("end__lte", css_class="col-md-3 col-sm-6"),
+            ),
+        )
+        self.form.helper = helper
