@@ -102,7 +102,7 @@
         {% endfor %}
       </tr>
     </thead>
-    <tbody>
+<tbody>
       {% for row in table %}
         <tr>
           <td>
@@ -114,29 +114,29 @@
             </div>
           </td>
 
-          {# --- ПОЧАТОК ЗМІНЕНОГО БЛОКУ --- #}
           {% for shifts in row.cells %}
             <td class="text-center">
+              {# Перевіряємо, чи є взагалі зміни в цій комірці #}
               {% if shifts %}
                 {% for s in shifts %}
+                  {# --- ПОЧАТОК ЛОГІКИ ВІДОБРАЖЕННЯ --- #}
 
-                    {# Перевіряємо статус #}
+                  {# 1. Лікарняний або Відпустка -> Тільки статус #}
                   {% if s.status == 'sick' or s.status == 'vacation' %}
-                    {# 1. Тільки статус (Лікарняний, Відпустка) #}
                     <div class="p-1 mb-1 border rounded shift-details shift-details-status-only">
                       {{ s.get_status_display }}
                     </div>
 
-                  {% elif s.status == 'work' %} {# <--- ВИПРАВЛЕНО ТУТ ('working' на 'work') #}
-                    {# 2. Тільки напрямок і час (Робоча зміна) #}
+                  {# 2. Робоча зміна -> Тільки напрямок і час #}
+                  {% elif s.status == 'work' %}
                     <div class="p-1 mb-1 border rounded shift-details">
                       <div class="small"><b>{{ s.direction }}</b></div>
                       <div class="small">{{ s.start|date:"H:i" }}–{{ s.end|date:"H:i" }}</div>
-                      {# Рядок статусу відсутній #}
+                      {# Статус не показуємо #}
                     </div>
 
+                  {# 3. Всі інші статуси -> Показуємо все #}
                   {% else %}
-                    {# 3. Все інше (напр. Вихідний) - показуємо все #}
                     <div class="p-1 mb-1 border rounded shift-details">
                       <div class="small"><b>{{ s.direction }}</b></div>
                       <div class="small">{{ s.start|date:"H:i" }}–{{ s.end|date:"H:i" }}</div>
@@ -145,10 +145,16 @@
                       </div>
                     </div>
                   {% endif %}
+                  {# --- КІНЕЦЬ ЛОГІКИ ВІДОБРАЖЕННЯ --- #}
+                {% endfor %}
+              {% else %}
+                {# Якщо змін немає, показуємо прочерк #}
+                <div class="text-muted small" style="display: flex; align-items: center; justify-content: center; min-height: 45px;">—</div>
+              {% endif %}
             </td>
           {% endfor %}
-          {# --- КІНЕЦЬ ЗМІНЕНОГО БЛОКУ --- #}
         </tr>
+      {# *** Ось де має бути тег {% empty %} - для зовнішнього циклу {% for row in table %} *** #}
       {% empty %}
         <tr>
           <td colspan="8" class="text-center text-muted">Нічого не знайдено за цими фільтрами.</td>
