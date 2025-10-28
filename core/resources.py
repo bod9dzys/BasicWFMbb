@@ -4,6 +4,7 @@ from import_export.widgets import ForeignKeyWidget, Widget
 from .models import Shift, Agent
 from django.contrib.auth.models import User
 from django.contrib.auth.hashers import make_password
+from django.utils.text import slugify
 
 # Допоміжний віджет, щоб просто читати значення без перетворень
 class SimpleReadWidget(Widget):
@@ -21,20 +22,20 @@ class ShiftResource(resources.ModelResource):
     # Тимчасове поле, щоб прочитати оригінальний username з CSV ДО того,
     # як before_import_row замінить значення 'agent' на ID.
     # Ми не хочемо, щоб це поле записувалось у модель Shift.
-    original_agent_username = fields.Field(
+    original_agent_name = fields.Field(
         column_name='agent',
-        attribute='original_agent_username', # Просто тимчасовий атрибут на рівні ресурсу
+        attribute='original_agent_name', # Просто тимчасовий атрибут на рівні ресурсу
         widget=SimpleReadWidget(), # Просто читаємо рядок як є
         readonly=True # Не намагаємося записати це в модель
     )
 
-    # Словник для кешування агентів {username: agent_id}
+    # Словник для кешування агентів {normalized_name: agent_id}
     _agent_cache = {}
 
     class Meta:
         model = Shift
         # Поля, які імпортуються/експортуються. 'agent' тепер працює з ID.
-        fields = ('id', 'agent', 'start', 'end', 'direction', 'status', 'activity', 'comment', 'original_agent_username')
+        fields = ('id', 'agent', 'start', 'end', 'direction', 'status', 'activity', 'comment', 'original_agent_name')
         # Вказуємо порядок для експорту (без тимчасового поля)
         export_order = ('id', 'agent', 'start', 'end', 'direction', 'status', 'activity', 'comment')
         import_id_fields = ('id',)
@@ -47,87 +48,74 @@ class ShiftResource(resources.ModelResource):
     def before_import(self, dataset, using_transactions=None, dry_run=False, **kwargs):
         """
         Знаходить або створює всіх User/Agent ОДИН РАЗ перед імпортом.
-        Заповнює кеш _agent_cache = {username: agent_id}.
+        Заповнює кеш _agent_cache = {normalized_name: agent_id}.
         """
         self._agent_cache.clear()
 
         # Використовуємо 'agent' як назву колонки для отримання імен
         if 'agent' not in dataset.headers:
-             raise ValueError("Колонка 'agent' відсутня у CSV файлі.")
+            raise ValueError("Колонка 'agent' відсутня у CSV файлі.")
 
-        usernames = set(username for username in dataset['agent'] if username) # Ігноруємо порожні
-        print(f"Знайдено {len(usernames)} унікальних імен агентів у файлі.")
+        # Збираємо унікальні імена та пам'ятаємо оригінальний запис
+        normalized_to_original = {}
+        for raw_name in dataset['agent']:
+            if not raw_name:
+                continue
+            normalized = self._normalize_name(raw_name)
+            if normalized:
+                normalized_to_original.setdefault(normalized, self._clean_display_name(raw_name))
 
-        # Оптимізований запит: отримуємо username та ID агента одним запитом
-        existing_agents_data = Agent.objects.filter(user__username__in=usernames).values_list('user__username', 'pk')
-        self._agent_cache = dict(existing_agents_data)
-        existing_usernames = set(self._agent_cache.keys())
+        print(f"Знайдено {len(normalized_to_original)} унікальних імен агентів у файлі.")
 
-        new_usernames = usernames - existing_usernames
-        print(f"З них {len(new_usernames)} нових.")
+        normalized_names = set(normalized_to_original.keys())
 
-        # Створюємо нових користувачів
-        new_users_to_create = []
-        for username in new_usernames:
-            new_users_to_create.append(
-                User(
-                    username=username,
-                    password=make_password('temp_password123'),
-                    is_staff=False,
-                    is_active=True
-                )
+        # Підтягнемо вже існуючих агентів за іменами
+        matched_existing = 0
+        for agent in Agent.objects.select_related('user').all():
+            display_name = self._clean_display_name(agent.user.get_full_name() or agent.user.username)
+            normalized = self._normalize_name(display_name)
+            if normalized in normalized_names:
+                self._agent_cache[normalized] = agent.pk
+                matched_existing += 1
+
+        print(f"Знайдено {matched_existing} агентів у базі.")
+
+        # Визначаємо нові імена, для яких потрібно створити користувача та агента
+        new_normalized_names = normalized_names - set(self._agent_cache.keys())
+        print(f"Створюємо {len(new_normalized_names)} нових агентів.")
+
+        taken_usernames = set(User.objects.values_list('username', flat=True))
+
+        for normalized in new_normalized_names:
+            original_name = normalized_to_original[normalized]
+            first_name, last_name = self._split_name(original_name)
+            username = self._generate_username(original_name, taken_usernames)
+            user = User.objects.create(
+                username=username,
+                first_name=first_name,
+                last_name=last_name,
+                password=make_password('temp_password123'),
+                is_staff=False,
+                is_active=True,
             )
-
-        created_users = []
-        if new_users_to_create:
-            # batch_size допомагає уникнути проблем з обмеженнями БД на кількість параметрів
-            created_users = User.objects.bulk_create(new_users_to_create, batch_size=500)
-            print(f"Створено {len(created_users)} нових користувачів.")
-
-        # Словник нових користувачів {username: user_object}
-        new_users_map = {user.username: user for user in created_users}
-
-        # Створюємо нових агентів для нових користувачів
-        agents_to_create = []
-        for username, user_obj in new_users_map.items():
-             agents_to_create.append(Agent(user=user_obj))
-
-        created_agents = []
-        if agents_to_create:
-             # batch_size також важливий тут
-            created_agents = Agent.objects.bulk_create(agents_to_create, batch_size=500)
-            print(f"Створено {len(created_agents)} нових агентів.")
-
-            # Оновлюємо кеш для нових агентів
-            # Важливо: після bulk_create об'єкти в created_agents мають user_id,
-            # але може не бути повного об'єкта user. Використовуємо new_users_map.
-            # Якщо Django версії < 4.1, pk може не бути встановлений після bulk_create без refresh.
-            # Якщо у вас стара версія Django, може знадобитися додатковий запит для отримання ID.
-            # Припускаємо, що PK встановлюється коректно (сучасні версії Django).
-            for agent in created_agents:
-                 # Шукаємо username відповідного user в new_users_map за user_id
-                 username = next((uname for uname, u in new_users_map.items() if u.pk == agent.user_id), None)
-                 if username and agent.pk:
-                      self._agent_cache[username] = agent.pk
-                 else:
-                      print(f"Помилка: Не вдалося додати створеного агента для user_id {agent.user_id} до кешу.")
-
+            agent = Agent.objects.create(user=user)
+            self._agent_cache[normalized] = agent.pk
 
         print("Кеш агентів підготовлено.")
-
 
     def before_import_row(self, row, row_number=None, **kwargs):
         """
         Підставляє ID агента з кешу в колонку 'agent' для ForeignKeyWidget.
         """
-        # Читаємо оригінальний username, який зберегло поле 'original_agent_username'
-        username = row.get('agent') # Доступ до оригінального значення колонки 'agent'
-        if username and username in self._agent_cache:
+        # Читаємо оригінальне значення імені агента, що прийшло із CSV
+        name = row.get('agent') # Доступ до оригінального значення колонки 'agent'
+        normalized = self._normalize_name(name)
+        if normalized and normalized in self._agent_cache:
             # Замінюємо значення в колонці 'agent' на ID
-            row['agent'] = self._agent_cache[username]
-        elif username:
-            # Якщо username є, але його немає в кеші - це помилка
-            print(f"ПОМИЛКА в рядку {row_number}: Не знайдено ID для агента '{username}' у кеші!")
+            row['agent'] = self._agent_cache[normalized]
+        elif normalized:
+            # Якщо ім'я є, але його немає в кеші - це помилка
+            print(f"ПОМИЛКА в рядку {row_number}: Не знайдено ID для агента '{name}' у кеші!")
             # Можна пропустити рядок, додавши skip_row=True, або викликати виключення
             # raise ValueError(f"Agent ID for {username} not found in cache.")
             kwargs['skip_row'] = True # Пропускаємо цей рядок
@@ -135,10 +123,46 @@ class ShiftResource(resources.ModelResource):
             # self.add_instance_error(None, row_number, row, ValidationError(f"Агента '{username}' не знайдено."))
 
         else:
-            # Якщо username порожній, пропускаємо рядок
-             kwargs['skip_row'] = True
+            # Якщо ім'я агента порожнє, пропускаємо рядок
+            kwargs['skip_row'] = True
 
 
     # Можна видалити цей метод, якщо він був у попередній версії
     # def after_import_row(self, row, row_result, **kwargs):
     #     pass
+
+    @staticmethod
+    def _normalize_name(name):
+        if not name:
+            return ""
+        cleaned = ShiftResource._clean_display_name(name)
+        return " ".join(cleaned.split()).casefold()
+
+    @staticmethod
+    def _clean_display_name(name):
+        if not name:
+            return ""
+        return " ".join(str(name).strip().split())
+
+    @staticmethod
+    def _split_name(full_name):
+        cleaned = ShiftResource._clean_display_name(full_name)
+        if not cleaned:
+            return "", ""
+        parts = cleaned.split(" ", 1)
+        first_name = parts[0]
+        last_name = parts[1] if len(parts) > 1 else ""
+        return first_name, last_name
+
+    @staticmethod
+    def _generate_username(full_name, taken_usernames):
+        base = slugify(full_name, allow_unicode=True).replace('-', '_')
+        if not base:
+            base = "agent"
+        candidate = base
+        counter = 1
+        while candidate in taken_usernames:
+            candidate = f"{base}_{counter}"
+            counter += 1
+        taken_usernames.add(candidate)
+        return candidate
