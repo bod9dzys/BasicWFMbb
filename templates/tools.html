@@ -85,13 +85,16 @@
         <span class="tools-badge mb-2">Інструменти</span>
         <h1 class="form-card__title mb-2">Аналіз робочих годин</h1>
         <p class="form-card__subtitle mb-0">
-          Оберіть агента та діапазон дат, щоб розрахувати фактичний обсяг годин у розкладі.
+          Оберіть тімліда та/або конкретного агента, щоб розрахувати фактичний обсяг годин за обраний період.
         </p>
       </div>
     </div>
     <div class="tools-card__body">
       <form method="get" class="row g-3 align-items-end">
         {{ form.non_field_errors }}
+        <div class="col-md-4">
+          {{ form.team_lead|as_crispy_field }}
+        </div>
         <div class="col-md-4">
           {{ form.agent|as_crispy_field }}
         </div>
@@ -111,9 +114,22 @@
   {% if summary %}
     <div class="tools-card__summary tools-summary">
       <div class="summary-metric">
-        <span class="summary-metric__label">Агент</span>
-        <span class="summary-metric__value">{{ summary.agent.user.get_full_name|default:summary.agent.user.username }}</span>
+        <span class="summary-metric__label">
+          {% if summary.agent %}Агент{% elif summary.team_lead %}Тімлід{% else %}Результати{% endif %}
+        </span>
+        <span class="summary-metric__value">
+          {% if summary.agent %}
+            {{ summary.agent.user.get_full_name|default:summary.agent.user.username }}
+          {% elif summary.team_lead %}
+            {{ summary.team_lead.get_full_name|default:summary.team_lead.username }}
+          {% else %}
+            Обрані параметри
+          {% endif %}
+        </span>
         <span class="text-muted small">{{ summary.start|date:"d.m.Y H:i" }} — {{ summary.end|date:"d.m.Y H:i" }}</span>
+        {% if summary.total_agents and summary.total_agents > 1 %}
+          <span class="text-muted small">Агентів: {{ summary.total_agents }}</span>
+        {% endif %}
       </div>
       <div class="d-grid d-md-flex gap-3">
         <div class="summary-metric flex-fill">
@@ -127,48 +143,83 @@
       </div>
     </div>
 
-    <div class="results-table-wrapper">
-      {% if shift_rows %}
+    {% if summary.total_agents|default:0 == 0 %}
+      <div class="results-table-wrapper">
+        <div class="p-4 text-center text-muted">
+          За обраними параметрами не знайдено жодного агента.
+        </div>
+      </div>
+    {% endif %}
+
+    {% if agent_summaries and summary.total_agents|default:0 > 1 %}
+      <div class="results-table-wrapper">
         <div class="table-responsive">
           <table class="table table-modern results-table mb-0">
             <thead>
               <tr>
-                <th scope="col">Дата</th>
+                <th scope="col">Агент</th>
                 <th scope="col">Години</th>
-                <th scope="col">Напрямок</th>
-                <th scope="col">Статус</th>
-                <th scope="col">Активність</th>
+                <th scope="col">Кількість змін</th>
               </tr>
             </thead>
             <tbody>
-              {% for row in shift_rows %}
+              {% for item in agent_summaries %}
                 <tr>
-                  <td>
-                    <div class="fw-semibold">{{ row.start|date:"d.m.Y" }}</div>
-                    <div class="text-muted small">
-                      {{ row.start|date:"H:i" }} – {{ row.end|date:"H:i" }}
-                      {% if row.full_start != row.start or row.full_end != row.end %}
-                        <span class="text-muted">
-                          ({{ row.full_start|date:"d.m H:i" }}–{{ row.full_end|date:"d.m H:i" }})
-                        </span>
-                      {% endif %}
-                    </div>
-                  </td>
-                  <td class="fw-semibold">{{ row.duration_hours }} год</td>
-                  <td>{{ row.direction }}</td>
-                  <td>{{ row.status }}</td>
-                  <td>{{ row.activity|default:"—" }}</td>
+                  <td>{{ item.display_name }}</td>
+                  <td class="fw-semibold">{{ item.total_hours }}</td>
+                  <td>{{ item.total_shifts }}</td>
                 </tr>
               {% endfor %}
             </tbody>
           </table>
         </div>
-      {% else %}
-        <div class="p-4 text-center text-muted">
-          За вибраний період змін не знайдено.
-        </div>
-      {% endif %}
-    </div>
+      </div>
+    {% endif %}
+
+    {% if summary.agent %}
+      <div class="results-table-wrapper">
+        {% if shift_rows %}
+          <div class="table-responsive">
+            <table class="table table-modern results-table mb-0">
+              <thead>
+                <tr>
+                  <th scope="col">Дата</th>
+                  <th scope="col">Години</th>
+                  <th scope="col">Напрямок</th>
+                  <th scope="col">Статус</th>
+                  <th scope="col">Активність</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in shift_rows %}
+                  <tr>
+                    <td>
+                      <div class="fw-semibold">{{ row.start|date:"d.m.Y" }}</div>
+                      <div class="text-muted small">
+                        {{ row.start|date:"H:i" }} – {{ row.end|date:"H:i" }}
+                        {% if row.full_start != row.start or row.full_end != row.end %}
+                          <span class="text-muted">
+                            ({{ row.full_start|date:"d.m H:i" }}–{{ row.full_end|date:"d.m H:i" }})
+                          </span>
+                        {% endif %}
+                      </div>
+                    </td>
+                    <td class="fw-semibold">{{ row.duration_hours }} год</td>
+                    <td>{{ row.direction }}</td>
+                    <td>{{ row.status }}</td>
+                    <td>{{ row.activity|default:"—" }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="p-4 text-center text-muted">
+            За вибраний період змін не знайдено.
+          </div>
+        {% endif %}
+      </div>
+    {% endif %}
   {% elif form.is_bound %}
     <div class="results-table-wrapper">
       <div class="p-4 text-center text-muted">

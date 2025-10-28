@@ -198,12 +198,14 @@ def exchange_create(request):
 
 @login_required
 def tools(request):
-    form = ToolsHoursForm(request.GET or None)
+    form = ToolsHoursForm(request.GET or None, user=request.user)
     summary = None
     shift_rows = []
+    agent_summaries = []
 
     if form.is_valid():
-        agent = form.cleaned_data["agent"]
+        agent = form.cleaned_data.get("agent")
+        team_lead = form.cleaned_data.get("team_lead")
         start = form.cleaned_data["start"]
         end = form.cleaned_data["end"]
         tz = timezone.get_current_timezone()
@@ -213,40 +215,73 @@ def tools(request):
         if timezone.is_naive(end):
             end = timezone.make_aware(end, tz)
 
-        shifts = (
-            Shift.objects.select_related("agent", "agent__user")
-            .filter(agent=agent, start__lt=end, end__gt=start)
-            .order_by("start")
-        )
+        agent_queryset = Agent.objects.select_related("user").filter(active=True)
+        if team_lead:
+            agent_queryset = agent_queryset.filter(team_lead=team_lead)
+        if agent:
+            agent_queryset = agent_queryset.filter(pk=agent.pk)
 
-        total_seconds = 0
-        for shift in shifts:
-            overlap_start = max(shift.start, start)
-            overlap_end = min(shift.end, end)
-            if overlap_start >= overlap_end:
-                continue
+        agent_list = list(agent_queryset.order_by("user__last_name", "user__first_name"))
+        total_seconds_all = 0
+        total_shifts_all = 0
 
-            seconds = (overlap_end - overlap_start).total_seconds()
-            total_seconds += seconds
+        for ag in agent_list:
+            shifts = (
+                Shift.objects.select_related("agent", "agent__user")
+                .filter(agent=ag, start__lt=end, end__gt=start)
+                .order_by("start")
+            )
 
-            shift_rows.append({
-                "id": shift.id,
-                "direction": shift.get_direction_display(),
-                "status": shift.get_status_display(),
-                "activity": shift.activity,
-                "start": timezone.localtime(overlap_start, tz),
-                "end": timezone.localtime(overlap_end, tz),
-                "full_start": timezone.localtime(shift.start, tz),
-                "full_end": timezone.localtime(shift.end, tz),
-                "duration_hours": round(seconds / 3600, 2),
+            agent_seconds = 0
+            agent_shift_rows = []
+
+            for shift in shifts:
+                overlap_start = max(shift.start, start)
+                overlap_end = min(shift.end, end)
+                if overlap_start >= overlap_end:
+                    continue
+
+                seconds = (overlap_end - overlap_start).total_seconds()
+                agent_seconds += seconds
+
+                agent_shift_rows.append({
+                    "id": shift.id,
+                    "direction": shift.get_direction_display(),
+                    "status": shift.get_status_display(),
+                    "activity": shift.activity,
+                    "start": timezone.localtime(overlap_start, tz),
+                    "end": timezone.localtime(overlap_end, tz),
+                    "full_start": timezone.localtime(shift.start, tz),
+                    "full_end": timezone.localtime(shift.end, tz),
+                    "duration_hours": round(seconds / 3600, 2),
+                })
+
+            total_seconds_all += agent_seconds
+            total_shifts_all += len(agent_shift_rows)
+
+            agent_summaries.append({
+                "agent": ag,
+                "total_hours": round(agent_seconds / 3600, 2),
+                "total_shifts": len(agent_shift_rows),
+                "display_name": ag.user.get_full_name() or ag.user.username,
             })
 
+            if len(agent_list) == 1:
+                shift_rows = agent_shift_rows
+
+        if agent_summaries:
+            agent_summaries.sort(key=lambda item: (-item["total_hours"], item["display_name"]))
+
+        single_agent = agent_list[0] if len(agent_list) == 1 else None
+
         summary = {
-            "agent": agent,
+            "team_lead": team_lead,
+            "agent": single_agent,
             "start": timezone.localtime(start, tz),
             "end": timezone.localtime(end, tz),
-            "total_hours": round(total_seconds / 3600, 2),
-            "total_shifts": len(shift_rows),
+            "total_hours": round(total_seconds_all / 3600, 2),
+            "total_shifts": total_shifts_all,
+            "total_agents": len(agent_list),
         }
 
         shift_rows.sort(key=lambda row: row["start"])
@@ -258,6 +293,7 @@ def tools(request):
             "form": form,
             "summary": summary,
             "shift_rows": shift_rows,
+            "agent_summaries": agent_summaries,
         },
     )
 

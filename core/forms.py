@@ -249,10 +249,17 @@ class EmailAuthenticationForm(AuthenticationForm):
 
 
 class ToolsHoursForm(forms.Form):
+    team_lead = forms.ModelChoiceField(
+        queryset=User.objects.none(),
+        label="Тімлід",
+        required=False,
+        empty_label="Усі тімліди",
+    )
     agent = forms.ModelChoiceField(
         queryset=Agent.objects.select_related("user").filter(active=True),
         label="Агент",
-        empty_label="Оберіть агента",
+        required=False,
+        empty_label="Усі агенти",
     )
     start = forms.DateTimeField(
         label="Початок періоду",
@@ -277,8 +284,43 @@ class ToolsHoursForm(forms.Form):
         ),
     )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.user = user
+        # Base querysets
+        tl_ids_qs = (
+            Agent.objects.exclude(team_lead__isnull=True)
+            .values_list("team_lead", flat=True)
+            .distinct()
+        )
+        tl_ids = list(tl_ids_qs)
+        team_lead_qs = User.objects.filter(id__in=tl_ids).order_by("last_name", "first_name")
+
+        if user and not user.is_staff and user.id in tl_ids:
+            team_lead_qs = team_lead_qs.filter(pk=user.pk)
+            self.fields["team_lead"].empty_label = None
+            if not self.is_bound:
+                self.fields["team_lead"].initial = user.pk
+
+        self.fields["team_lead"].queryset = team_lead_qs
+
+        agent_qs = Agent.objects.select_related("user").filter(active=True).order_by(
+            "user__last_name", "user__first_name"
+        )
+
+        team_lead_value = self.data.get("team_lead") if self.is_bound else self.initial.get("team_lead")
+        try:
+            team_lead_pk = int(team_lead_value) if team_lead_value else None
+        except (TypeError, ValueError):
+            team_lead_pk = None
+
+        if team_lead_pk:
+            agent_qs = agent_qs.filter(team_lead_id=team_lead_pk)
+        elif user and not user.is_staff and user.id in tl_ids:
+            agent_qs = agent_qs.filter(team_lead_id=user.pk)
+
+        self.fields["agent"].queryset = agent_qs
+
         now = timezone.now()
         start_default = (now - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
         end_default = now.replace(second=0, microsecond=0)
@@ -289,6 +331,16 @@ class ToolsHoursForm(forms.Form):
         cleaned = super().clean()
         start = cleaned.get("start")
         end = cleaned.get("end")
+        team_lead = cleaned.get("team_lead")
+        agent = cleaned.get("agent")
+
         if start and end and start > end:
             raise forms.ValidationError("Початок періоду не може бути пізніше завершення.")
+
+        if not team_lead and not agent:
+            raise forms.ValidationError("Оберіть хоча б тімліда або конкретного агента.")
+
+        if agent and team_lead and agent.team_lead_id and agent.team_lead_id != team_lead.id:
+            raise forms.ValidationError("Обраний агент не належить зазначеному тімліду.")
+
         return cleaned
