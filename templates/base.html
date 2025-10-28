@@ -14,14 +14,34 @@
     <style>
       :root {
         --brand-accent: #4cc9f0;
+        --brand-accent-strong: #4895ef;
+        --brand-accent-soft: rgba(76, 201, 240, 0.18);
         --surface: rgba(255, 255, 255, 0.92);
+        --surface-alt: rgba(255, 255, 255, 0.78);
         --dark: rgba(15, 23, 42, 0.95);
+        --text-primary: #0f172a;
+        --text-secondary: #475569;
+        --border-soft: rgba(148, 163, 184, 0.28);
       }
       body {
         font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-        color: #1f2937;
-        background: linear-gradient(180deg, #f5f7fb 0%, #e7ecf7 100%);
+        color: var(--text-primary);
+        background: linear-gradient(180deg, #f5f7fb 0%, #dfe7f5 100%);
         min-height: 100vh;
+      }
+      h1, h2, h3, h4, h5, h6 {
+        color: var(--text-primary);
+        font-weight: 600;
+        letter-spacing: 0.01em;
+      }
+      a {
+        color: var(--brand-accent-strong);
+        text-decoration: none;
+        transition: color 0.2s ease, box-shadow 0.2s ease;
+      }
+      a:hover, a:focus {
+        color: #3a86ff;
+        box-shadow: inset 0 -0.1em 0 rgba(72, 149, 239, 0.3);
       }
       .navbar {
         background: var(--dark);
@@ -32,8 +52,8 @@
         color: #f8f9fa;
         font-weight: 600;
         letter-spacing: 0.03em;
-        font-size: 1.15rem;
-        padding: 0.35rem 0.95rem;
+        font-size: 1.16rem;
+        padding: 0.35rem 1rem;
         border-radius: 0.75rem;
         transition: color 0.2s ease, background-color 0.2s ease,
           box-shadow 0.2s ease, transform 0.2s ease;
@@ -49,33 +69,192 @@
       .admin-btn {
         border: none;
         border-radius: 999px;
-        padding: 0.4rem 1.1rem;
-        background: rgba(255, 255, 255, 0.14);
+        padding: 0.42rem 1.25rem;
+        background: rgba(255, 255, 255, 0.16);
         color: #f8f9fa;
         font-weight: 500;
         transition: color 0.2s ease, background-color 0.2s ease,
-          box-shadow 0.2s ease;
+          box-shadow 0.2s ease, transform 0.2s ease;
       }
       .admin-btn:hover,
       .admin-btn:focus {
         background: #f8f9fa;
         color: #0f172a;
         box-shadow: 0 10px 25px rgba(15, 23, 42, 0.25);
+        transform: translateY(-1px);
+      }
+      .btn-accent {
+        background: var(--brand-accent);
+        color: #0f172a;
+        border: none;
+        font-weight: 600;
+        padding: 0.55rem 1.5rem;
+        border-radius: 999px;
+        box-shadow: 0 12px 24px rgba(76, 201, 240, 0.25);
+        transition: background-color 0.2s ease, transform 0.2s ease,
+          box-shadow 0.2s ease;
+      }
+      .btn-accent:hover,
+      .btn-accent:focus {
+        background: var(--brand-accent-strong);
+        color: #fff;
+        box-shadow: 0 16px 32px rgba(72, 149, 239, 0.35);
+        transform: translateY(-1px);
+      }
+      .btn-soft {
+        background: var(--surface-alt);
+        border: 1px solid var(--border-soft);
+        color: var(--text-secondary);
+        border-radius: 999px;
+        font-weight: 500;
+        transition: background-color 0.2s ease, border-color 0.2s ease,
+          color 0.2s ease, box-shadow 0.2s ease;
+      }
+      .btn-soft:hover,
+      .btn-soft:focus {
+        background: var(--brand-accent-soft);
+        border-color: var(--brand-accent-strong);
+        color: var(--text-primary);
+        box-shadow: 0 12px 24px rgba(76, 201, 240, 0.2);
+      }
+      .btn-primary {
+        background: var(--brand-accent);
+        border-color: var(--brand-accent);
+        color: #0f172a;
+        font-weight: 600;
+        border-radius: 0.75rem;
+        transition: background-color 0.2s ease, box-shadow 0.2s ease,
+          transform 0.2s ease;
+      }
+      .btn-primary:hover,
+      .btn-primary:focus {
+        background: var(--brand-accent-strong);
+        border-color: var(--brand-accent-strong);
+        color: #fff;
+        box-shadow: 0 14px 28px rgba(72, 149, 239, 0.35);
+        transform: translateY(-1px);
       }
       main.container {
-        max-width: 1120px;
+        max-width: 1140px;
         margin: 2.5rem auto;
         background: var(--surface);
+        border-radius: 1.5rem;
+        padding: 2.75rem 2.25rem;
+        box-shadow: 0 24px 55px rgba(15, 23, 42, 0.12);
+        border: 1px solid var(--border-soft);
+        backdrop-filter: blur(16px);
+      }
+      .card {
         border-radius: 1.25rem;
-        padding: 2.5rem 2rem;
+        border: 1px solid var(--border-soft);
+        background: var(--surface);
+        box-shadow: 0 15px 35px rgba(15, 23, 42, 0.08);
+        backdrop-filter: blur(12px);
+      }
+      .glass-card {
+        background: rgba(255, 255, 255, 0.88);
         box-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
+        border: 1px solid rgba(148, 163, 184, 0.22);
       }
       .alert {
         border: none;
-        border-radius: 0.9rem;
-        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+        border-radius: 1rem;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+        backdrop-filter: blur(8px);
       }
-    </style>
+      .form-card {
+        border-radius: 1.25rem;
+        border: 1px solid var(--border-soft);
+        background: rgba(255, 255, 255, 0.9);
+        box-shadow: 0 20px 50px rgba(15, 23, 42, 0.12);
+        overflow: hidden;
+      }
+      .form-card__header {
+        background: rgba(76, 201, 240, 0.14);
+        border-bottom: 1px solid rgba(76, 201, 240, 0.22);
+        padding: 1.5rem 2rem;
+      }
+      .form-card__title {
+        font-size: 1.35rem;
+        font-weight: 600;
+        margin-bottom: 0.35rem;
+      }
+      .form-card__subtitle {
+        color: var(--text-secondary);
+        margin: 0;
+      }
+      .form-control,
+      .form-select {
+        border-radius: 0.9rem;
+        border: 1px solid var(--border-soft);
+        padding: 0.6rem 0.85rem;
+        background: rgba(255, 255, 255, 0.94);
+        transition: border-color 0.2s ease, box-shadow 0.2s ease,
+          background-color 0.2s ease;
+      }
+      .form-control:focus,
+      .form-select:focus {
+        border-color: var(--brand-accent-strong);
+        box-shadow: 0 0 0 0.25rem rgba(72, 149, 239, 0.25);
+        background-color: #fff;
+      }
+      .form-label {
+        font-weight: 600;
+        color: var(--text-secondary);
+      }
+      .form-text {
+        color: rgba(100, 116, 139, 0.9);
+      }
+      .table-modern {
+        color: var(--text-secondary);
+        border-color: rgba(148, 163, 184, 0.14);
+      }
+      .table-modern thead th {
+        background: rgba(15, 23, 42, 0.035);
+        border: none;
+        font-weight: 600;
+        color: var(--text-primary);
+        padding: 0.85rem 0.75rem;
+        text-transform: uppercase;
+        font-size: 0.72rem;
+        letter-spacing: 0.05em;
+      }
+      .table-modern tbody td {
+        border-top: 1px solid rgba(148, 163, 184, 0.18);
+        padding: 0.85rem 0.75rem;
+        vertical-align: middle;
+        background: rgba(255, 255, 255, 0.82);
+      }
+      .table-modern tbody tr:hover td {
+        background: rgba(76, 201, 240, 0.08);
+      }
+      .table-modern tbody td:first-child {
+        position: sticky;
+        left: 0;
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: inset -1px 0 0 rgba(148, 163, 184, 0.15);
+        z-index: 2;
+      }
+      .table-modern thead th:first-child {
+        position: sticky;
+        left: 0;
+        z-index: 3;
+      }
+      @media (max-width: 991.98px) {
+        main.container {
+          padding: 2rem 1.75rem;
+          margin: 1.75rem auto;
+        }
+        .navbar-brand {
+          font-size: 1.05rem;
+        }
+      }
+      @media (max-width: 575.98px) {
+        main.container {
+          padding: 1.75rem 1.25rem;
+          border-radius: 1.25rem;
+        }
+      }
     </style>
   </head>
   <body class="bg-light">

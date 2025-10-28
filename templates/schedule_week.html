@@ -5,162 +5,341 @@
 
 {% block content %}
 <style>
-  /* Стилі для таблиці */
-  .schedule-table th, .schedule-table td {
-    padding: 0.2rem;
-    font-size: 0.78rem;
-    min-width: 80px; /* Ширина колонок днів */
-    max-width: 110px;
-    word-wrap: break-word;
-    vertical-align: top;
-  }
-  .schedule-table th:first-child, .schedule-table td:first-child {
-    min-width: 140px;
-    max-width: 180px;
-    text-align: left;
-    vertical-align: middle;
-  }
-  /* Стилі для плашки зміни */
-  .shift-details {
-    line-height: 1.3;
-    padding-top: 0.2rem;
-    padding-bottom: 0.2rem;
+  .schedule-page {
     display: flex;
     flex-direction: column;
-    min-height: 45px; /* Задамо невелику мін. висоту для узгодженості */
-    justify-content: center; /* Центруємо вміст вертикально */
+    gap: 1.75rem;
   }
-  .shift-details .small {
-      font-size: 0.82rem; /* **Збільшено шрифт (був 0.75rem)** */
+  .schedule-toolbar {
+    padding: 2rem 2.25rem;
   }
-  /* Окремий стиль для плашок Відпустка/Лікарняний */
-  .shift-details-status-only {
-    justify-content: center;
+  .schedule-week-badge {
+    display: inline-flex;
     align-items: center;
-    font-weight: bold;
-    font-size: 0.82rem; /* **Збільшено шрифт (був 0.75rem)** */
+    gap: 0.4rem;
+    padding: 0.3rem 0.8rem;
+    border-radius: 999px;
+    background: rgba(76, 201, 240, 0.18);
+    color: #0f172a;
+    font-weight: 600;
+    font-size: 0.78rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  .schedule-week-title {
+    font-size: 1.5rem;
+    margin-bottom: 0.35rem;
+  }
+  .schedule-week-range {
+    color: var(--text-secondary);
+    margin-bottom: 0;
+  }
+  .meta-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.06);
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 500;
+  }
+  .week-nav .btn {
+    min-width: 134px;
+  }
+  .week-dropdown .dropdown-menu {
+    border-radius: 1rem;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    box-shadow: 0 20px 45px rgba(15, 23, 42, 0.12);
+    padding: 0.25rem;
+  }
+  .week-dropdown .dropdown-item {
+    border-radius: 0.75rem;
+    padding: 0.55rem 0.85rem;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+  .week-dropdown .dropdown-item:hover {
+    background: rgba(76, 201, 240, 0.16);
+    color: var(--text-primary);
+  }
+  .week-dropdown .dropdown-item.active,
+  .week-dropdown .dropdown-item:active {
+    background: var(--brand-accent);
+    color: #0f172a;
+    font-weight: 600;
+  }
+  .schedule-filter__toggle {
+    padding-inline: 1.1rem;
+  }
+  .filters-card {
+    border-radius: 1.2rem;
+  }
+  .filters-card form {
+    padding-top: 0.5rem;
+  }
+  .schedule-table-wrapper {
+    overflow: hidden;
+  }
+  .schedule-table-wrapper .table-responsive {
+    border-radius: 1.2rem;
+  }
+  .schedule-table {
+    min-width: 1000px;
+  }
+  .schedule-table thead th:first-child,
+  .schedule-table tbody td:first-child {
+    min-width: 200px;
+    max-width: 240px;
+  }
+  .schedule-table__day-name {
+    display: block;
+    font-weight: 700;
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+  }
+  .schedule-table__day-date {
+    display: block;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    margin-top: 0.1rem;
+  }
+  .agent-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+  .agent-card__name {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+  }
+  .agent-card__meta {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+  }
+  .shift-cell {
+    min-width: 140px;
+  }
+  .shift-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+  }
+  .shift-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.7rem 0.75rem;
+    border-radius: 1rem;
+    border: 1px solid rgba(76, 201, 240, 0.22);
+    background: rgba(76, 201, 240, 0.12);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+    text-align: left;
+  }
+  .shift-card__direction {
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .shift-card__time {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #0f172a;
+  }
+  .shift-card__meta {
+    font-size: 0.76rem;
+    color: var(--text-secondary);
+  }
+  .shift-card--status {
+    align-items: center;
+    justify-content: center;
+    background: rgba(239, 68, 68, 0.12);
+    border-color: rgba(239, 68, 68, 0.22);
+    color: #b91c1c;
+    text-transform: uppercase;
+    font-weight: 700;
+    font-size: 0.82rem;
+  }
+  .shift-card--other {
+    background: rgba(129, 140, 248, 0.16);
+    border-color: rgba(99, 102, 241, 0.28);
+  }
+  .shift-empty {
+    border-radius: 1rem;
+    border: 1px dashed rgba(148, 163, 184, 0.4);
+    color: rgba(100, 116, 139, 0.9);
+    font-size: 0.78rem;
+    min-height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.6);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  @media (max-width: 1199.98px) {
+    .schedule-toolbar {
+      padding: 1.75rem;
+    }
+  }
+  @media (max-width: 991.98px) {
+    .schedule-toolbar {
+      padding: 1.5rem;
+    }
+    .week-nav .btn {
+      min-width: 120px;
+    }
+  }
+  @media (max-width: 767.98px) {
+    .schedule-week-title {
+      font-size: 1.3rem;
+    }
+    .schedule-week-badge {
+      font-size: 0.7rem;
+    }
+    .meta-pill {
+      font-size: 0.72rem;
+    }
   }
 </style>
 
-<div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
-  <div class="btn-group" role="group" aria-label="Навігація тижнями">
-    <a class="btn btn-outline-secondary" href="{% url 'schedule_week' %}?week={{ prev_week }}">‹ Попередній</a>
-    <div class="dropdown">
-      <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-        Тиждень: {{ week_start|date:"d.m" }} – {{ days.6|date:"d.m.Y" }}
-      </button>
-      <div id="weeksDropdown" class="dropdown-menu p-0" style="max-height: 320px; overflow: auto; min-width: 320px;">
-        {% for w in weeks %}
-          <a class="dropdown-item {% if forloop.counter0 == active_week_idx %}active{% endif %}"
-             href="{% url 'schedule_week' %}?week={{ w.param }}">
-            {{ w.label }}
-          </a>
-        {% endfor %}
-      </div>
-    </div>
-    <a class="btn btn-outline-secondary" href="{% url 'schedule_week' %}?week={{ next_week }}">Наступний ›</a>
-  </div>
-  <h2 class="h5 mb-0">
-    {{ week_start|date:"d.m.Y" }} — {{ days.6|date:"d.m.Y" }}
-  </h2>
-  <a href="{% url 'exchange_create' %}" class="btn btn-primary">Обмін змінами</a>
-</div>
-
-<div class="mb-2 d-flex justify-content-end">
-  <button class="btn btn-sm btn-outline-dark" type="button" data-bs-toggle="collapse" data-bs-target="#filtersCollapse" aria-expanded="false" aria-controls="filtersCollapse">
-    Фільтри
-  </button>
-</div>
-
-<div class="collapse" id="filtersCollapse">
-  <div class="card card-body mb-3">
-    <form method="get" class="row g-3 align-items-end">
-      <input type="hidden" name="week" value="{{ request.GET.week|default:week_start|date:'Y-m-d' }}">
-      <div class="col-12">
-        <div class="row g-2">
-          {% crispy filter.form %}
+<div class="schedule-page">
+  <div class="schedule-toolbar glass-card card">
+    <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-4">
+      <div>
+        <div class="schedule-week-badge">
+          Поточний тиждень
+        </div>
+        <h1 class="schedule-week-title">Розклад на {{ week_start|date:"d.m" }} – {{ days.6|date:"d.m.Y" }}</h1>
+        <p class="schedule-week-range">Планування змін з {{ week_start|date:"l, d.m" }} по {{ days.6|date:"l, d.m" }}</p>
+        <div class="d-flex flex-wrap gap-2 mt-3">
+          <span class="meta-pill">Агентів: {{ table|length }}</span>
+          <span class="meta-pill">Днів: {{ days|length }}</span>
         </div>
       </div>
-      <div class="col-12">
-        <button type="submit" class="btn btn-dark">Застосувати</button>
-        <a href="{% url 'schedule_week' %}?week={{ week_start|date:'Y-m-d' }}" class="btn btn-outline-secondary">Скинути</a>
+      <div class="d-flex flex-column align-items-stretch align-items-lg-end gap-3">
+        <div class="btn-group week-nav" role="group" aria-label="Навігація тижнями">
+          <a class="btn btn-soft" href="{% url 'schedule_week' %}?week={{ prev_week }}">‹ Попередній</a>
+          <div class="dropdown week-dropdown">
+            <button class="btn btn-soft dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+              Тиждень: {{ week_start|date:"d.m" }} – {{ days.6|date:"d.m.Y" }}
+            </button>
+            <div id="weeksDropdown" class="dropdown-menu p-0" style="max-height: 320px; overflow: auto; min-width: 320px;">
+              {% for w in weeks %}
+                <a class="dropdown-item {% if forloop.counter0 == active_week_idx %}active{% endif %}"
+                   href="{% url 'schedule_week' %}?week={{ w.param }}">
+                  {{ w.label }}
+                </a>
+              {% endfor %}
+            </div>
+          </div>
+          <a class="btn btn-soft" href="{% url 'schedule_week' %}?week={{ next_week }}">Наступний ›</a>
+        </div>
+        <a href="{% url 'exchange_create' %}" class="btn btn-accent">Обмін змінами</a>
       </div>
-    </form>
+    </div>
   </div>
-</div>
 
-<div class="table-responsive">
-  <table class="table table-sm table-bordered align-middle schedule-table">
-    <thead class="table-light">
-      <tr>
-        <th>Агент</th>
-        {% for d in days %}
-          <th class="text-center">
-            <div class="fw-semibold">{{ d|date:"D" }}</div>
-            <div class="text-muted">{{ d|date:"d.m" }}</div>
-          </th>
-        {% endfor %}
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in table %}
-        <tr>
-          <td>
-            <div class="fw-semibold">
-              {{ row.agent.user.get_full_name|default:row.agent.user.username }}
+  <div class="d-flex justify-content-end">
+    <button class="btn btn-soft btn-sm schedule-filter__toggle" type="button" data-bs-toggle="collapse" data-bs-target="#filtersCollapse" aria-expanded="false" aria-controls="filtersCollapse">
+      Фільтри
+    </button>
+  </div>
+
+  <div class="collapse" id="filtersCollapse">
+    <div class="card glass-card filters-card mb-4">
+      <div class="card-body">
+        <form method="get" class="row g-3 align-items-end">
+          <input type="hidden" name="week" value="{{ request.GET.week|default:week_start|date:'Y-m-d' }}">
+          <div class="col-12">
+            <div class="row g-3">
+              {% crispy filter.form %}
             </div>
-            <div class="text-muted small">
-              {% if row.agent.team_lead %}TL: {{ row.agent.team_lead.get_full_name|default:row.agent.team_lead.username }}{% endif %}
-            </div>
-          </td>
+          </div>
+          <div class="col-12 d-flex flex-wrap gap-2">
+            <button type="submit" class="btn btn-accent">Застосувати</button>
+            <a href="{% url 'schedule_week' %}?week={{ week_start|date:'Y-m-d' }}" class="btn btn-soft">Скинути</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
 
-          {% for shifts in row.cells %}
-            <td class="text-center">
-              {# Перевіряємо, чи є взагалі зміни в цій комірці #}
-              {% if shifts %}
-                {% for s in shifts %}
-                  {# --- ПОЧАТОК ЛОГІКИ ВІДОБРАЖЕННЯ --- #}
-
-                  {# 1. Лікарняний або Відпустка -> Тільки статус #}
-                  {% if s.status == 'sick' or s.status == 'vacation' %}
-                    <div class="p-1 mb-1 border rounded shift-details shift-details-status-only">
-                      {{ s.get_status_display }}
-                    </div>
-
-                  {# 2. Робоча зміна -> Тільки напрямок і час #}
-                  {% elif s.status == 'work' %}
-                    <div class="p-1 mb-1 border rounded shift-details">
-                      <div class="small"><b>{{ s.direction }}</b></div>
-                      <div class="small">{{ s.start|date:"H:i" }}–{{ s.end|date:"H:i" }}</div>
-                      {# Статус не показуємо #}
-                    </div>
-
-                  {# 3. Всі інші статуси -> Показуємо все #}
-                  {% else %}
-                    <div class="p-1 mb-1 border rounded shift-details">
-                      <div class="small"><b>{{ s.direction }}</b></div>
-                      <div class="small">{{ s.start|date:"H:i" }}–{{ s.end|date:"H:i" }}</div>
-                      <div class="small text-muted">
-                        {{ s.get_status_display }}{% if s.activity %} · {{ s.activity }}{% endif %}
-                      </div>
-                    </div>
+  <div class="schedule-table-wrapper card glass-card">
+    <div class="table-responsive">
+      <table class="table table-modern align-middle schedule-table mb-0">
+        <thead>
+          <tr>
+            <th scope="col">Агент</th>
+            {% for d in days %}
+              <th scope="col" class="text-center">
+                <span class="schedule-table__day-name">{{ d|date:"D" }}</span>
+                <span class="schedule-table__day-date">{{ d|date:"d.m" }}</span>
+              </th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in table %}
+            <tr>
+              <td>
+                <div class="agent-card">
+                  <span class="agent-card__name">
+                    {{ row.agent.user.get_full_name|default:row.agent.user.username }}
+                  </span>
+                  {% if row.agent.team_lead %}
+                    <span class="agent-card__meta">
+                      TL: {{ row.agent.team_lead.get_full_name|default:row.agent.team_lead.username }}
+                    </span>
                   {% endif %}
-                  {# --- КІНЕЦЬ ЛОГІКИ ВІДОБРАЖЕННЯ --- #}
-                {% endfor %}
-              {% else %}
-                {# Якщо змін немає, показуємо прочерк #}
-                <div class="text-muted small" style="display: flex; align-items: center; justify-content: center; min-height: 45px;">—</div>
-              {% endif %}
-            </td>
+                </div>
+              </td>
+
+              {% for shifts in row.cells %}
+                <td class="shift-cell">
+                  {% if shifts %}
+                    <div class="shift-stack">
+                      {% for s in shifts %}
+                        {% if s.status == 'sick' or s.status == 'vacation' %}
+                          <div class="shift-card shift-card--status">
+                            {{ s.get_status_display }}
+                          </div>
+                        {% elif s.status == 'work' %}
+                          <div class="shift-card shift-card--work">
+                            <span class="shift-card__direction">{{ s.direction }}</span>
+                            <span class="shift-card__time">{{ s.start|date:"H:i" }}–{{ s.end|date:"H:i" }}</span>
+                          </div>
+                        {% else %}
+                          <div class="shift-card shift-card--other">
+                            <span class="shift-card__direction">{{ s.direction }}</span>
+                            <span class="shift-card__time">{{ s.start|date:"H:i" }}–{{ s.end|date:"H:i" }}</span>
+                            <span class="shift-card__meta">
+                              {{ s.get_status_display }}{% if s.activity %} · {{ s.activity }}{% endif %}
+                            </span>
+                          </div>
+                        {% endif %}
+                      {% endfor %}
+                    </div>
+                  {% else %}
+                    <div class="shift-empty">Немає змін</div>
+                  {% endif %}
+                </td>
+              {% endfor %}
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="{{ days|length|add:'1' }}" class="text-center text-muted py-5">Нічого не знайдено за цими фільтрами.</td>
+            </tr>
           {% endfor %}
-        </tr>
-      {% empty %}
-        <tr>
-          <td colspan="8" class="text-center text-muted">Нічого не знайдено за цими фільтрами.</td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+        </tbody>
+      </table>
+    </div>
+  </div>
 </div>
 
 <script>

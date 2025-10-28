@@ -4,9 +4,48 @@
 {% block title %}Обмін змін{% endblock %}
 
 {% block content %}
-<h2 class="h4 mb-3">Запит на обмін</h2>
-<form method="post" class="card" id="exchange-form"> {# Додано ID форми #}
-  <div class="card-body">
+<style>
+  .exchange-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.75rem;
+    border-radius: 999px;
+    background: rgba(76, 201, 240, 0.2);
+    color: #0f172a;
+    font-weight: 600;
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .exchange-help {
+    color: var(--text-secondary);
+    margin: 0;
+    font-size: 0.88rem;
+  }
+  .exchange-form__body {
+    padding: 2rem 2.5rem;
+  }
+  @media (max-width: 767.98px) {
+    .exchange-form__body {
+      padding: 1.75rem;
+    }
+  }
+</style>
+
+<form method="post" class="form-card glass-card" id="exchange-form">
+  <div class="form-card__header d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+    <div>
+      <span class="exchange-badge mb-2">Обмін</span>
+      <h1 class="form-card__title mb-1">Запит на обмін змінами</h1>
+      <p class="form-card__subtitle exchange-help">
+        Оберіть двох агентів, перевірте доступні зміни та підтвердьте, щоб виконати взаємний обмін.
+      </p>
+    </div>
+    <div class="text-muted text-md-end small">
+      Крок 1 · Підбір змін
+    </div>
+  </div>
+  <div class="exchange-form__body">
     {% csrf_token %}
     {% crispy form %}
   </div>
