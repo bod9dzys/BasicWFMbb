@@ -1,17 +1,15 @@
 # core/views.py
-import json
 from datetime import timedelta, datetime
 from django.utils import timezone
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required, permission_required
 
+from django.http import JsonResponse
 from .models import Shift, ShiftExchange, Agent, ShiftStatus
 from .filters import ShiftFilter
 from .forms import ExchangeCreateForm
 from django.contrib import messages
 from .services import can_swap
-from calendar import monthrange
-from django.http import JsonResponse
 
 def _monday(dt):
     return dt - timedelta(days=dt.weekday())
@@ -35,31 +33,6 @@ def _weeks_of_year(year: int, tz):
         start += timedelta(days=7)
         i += 1
     return weeks
-
-def _build_agent_shift_map():
-    tz = timezone.get_current_timezone()
-    shifts = (
-        Shift.objects
-        .select_related("agent", "agent__user")
-        .order_by("-start")
-    )
-    data = {}
-    for shift in shifts:
-        start_local = timezone.localtime(shift.start, tz)
-        end_local = timezone.localtime(shift.end, tz)
-        direction = shift.get_direction_display()
-        status = shift.get_status_display()
-        label_parts = [
-            f"{start_local:%d.%m %H:%M}–{end_local:%H:%M}",
-            direction,
-        ]
-        if shift.status != ShiftStatus.WORK:
-            label_parts.append(status)
-        data.setdefault(str(shift.agent_id), []).append({
-            "id": shift.pk,
-            "label": " · ".join(label_parts),
-        })
-    return data
 
 @login_required
 def schedule_week(request):
@@ -163,8 +136,7 @@ def exchange_create(request):
             messages.success(request, "Запит на обмін створено і очікує рішення.")
             return redirect("exchange_create")
 
-    agent_shifts = _build_agent_shift_map()
-    return render(request, "exchange_form.html", {"form": form, "agent_shifts_json": json.dumps(agent_shifts, ensure_ascii=False)})
+    return render(request, "exchange_form.html", {"form": form})
 
 
 @login_required
@@ -187,47 +159,53 @@ def exchange_reject(request, pk: int):
     messages.warning(request, "Обмін відхилено.")
     return redirect("schedule_week")
 
-@login_required # Або інша перевірка доступу
+@login_required  # Або інша перевірка доступу
 def get_agent_shifts_for_month(request):
-    agent_id = request.GET.get('agent_id')
+    agent_id = request.GET.get("agent_id")
     shifts_data = []
-    error_message = None # Для збереження тексту помилки
+    error_message = None
 
     if not agent_id:
         error_message = "Не надано ID агента."
     else:
         try:
-            # Перевіряємо, чи agent_id є числом
             agent_id_int = int(agent_id)
-            agent = Agent.objects.get(pk=agent_id_int)
-            now = timezone.localdate()
-            first_day = now.replace(day=1)
-            last_day_num = monthrange(now.year, now.month)[1]
-            last_day = now.replace(day=last_day_num)
+            Agent.objects.get(pk=agent_id_int)  # Переконуємось, що агент існує
 
-            start_dt = timezone.make_aware(datetime.combine(first_day, datetime.min.time()))
-            # Кінець місяця - це початок наступного дня після останнього дня місяця
-            end_dt_exclusive = timezone.make_aware(datetime.combine(last_day + timedelta(days=1), datetime.min.time()))
+            tz = timezone.get_current_timezone()
+            now = timezone.now()
+            horizon = now + timedelta(days=60)
 
-            shifts = Shift.objects.filter(
-                agent=agent,
-                # Зміни, що починаються В межах місяця
-                start__gte=start_dt,
-                start__lt=end_dt_exclusive, # Використовуємо < для кінця місяця
-                status__in=['work', 'training', 'meeting', 'onboard']
-            ).select_related('agent__user').order_by('start')
+            shifts = (
+                Shift.objects
+                .select_related("agent", "agent__user")
+                .filter(agent_id=agent_id_int, end__gte=now - timedelta(days=1), start__lte=horizon)
+                .order_by("start")
+            )
 
-            # Переконуємось, що str(shift) працює
-            shifts_data = [{'id': shift.id, 'text': str(shift) if shift else 'Невдалося відобразити зміну'} for shift in shifts]
+            for shift in shifts:
+                start_local = timezone.localtime(shift.start, tz)
+                end_local = timezone.localtime(shift.end, tz)
+                label_parts = [
+                    f"{start_local:%d.%m %H:%M}–{end_local:%H:%M}",
+                    shift.get_direction_display(),
+                ]
+                if shift.status != ShiftStatus.WORK:
+                    label_parts.append(shift.get_status_display())
+                if shift.activity:
+                    label_parts.append(shift.activity)
+
+                shifts_data.append({
+                    "id": shift.id,
+                    "text": " · ".join(label_parts),
+                })
 
         except Agent.DoesNotExist:
             error_message = f"Агент з ID {agent_id} не знайдений."
         except ValueError:
-             error_message = f"Невірний ID агента: {agent_id}."
+            error_message = f"Невірний ID агента: {agent_id}."
         except Exception as e:
-             # Логуємо непередбачену помилку на сервері
-             print(f"Помилка у get_agent_shifts_for_month: {e}")
-             error_message = "Внутрішня помилка сервера при отриманні змін."
+            print(f"Помилка у get_agent_shifts_for_month: {e}")
+            error_message = "Внутрішня помилка сервера при отриманні змін."
 
-    # Завжди повертаємо JSON, включаючи помилку, якщо вона є
-    return JsonResponse({'shifts': shifts_data, 'error': error_message})
+    return JsonResponse({"shifts": shifts_data, "error": error_message})

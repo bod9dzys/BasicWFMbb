@@ -13,101 +13,119 @@
 </form>
 
 <script>
-      document.addEventListener('DOMContentLoaded', function() {
-        const fromAgentSelect = document.getElementById('id_from_agent');
-        const toAgentSelect = document.getElementById('id_to_agent');
-        const fromShiftSelect = document.getElementById('id_from_shift');
-        const toShiftSelect = document.getElementById('id_to_shift');
-        const shiftsUrl = "{% url 'ajax_get_agent_shifts' %}";
+document.addEventListener('DOMContentLoaded', function () {
+  const shiftsUrl = "{% url 'ajax_get_agent_shifts' %}";
+  const fromAgentSelect = document.getElementById('id_from_agent');
+  const toAgentSelect = document.getElementById('id_to_agent');
+  const fromShiftSelect = document.getElementById('id_from_shift');
+  const toShiftSelect = document.getElementById('id_to_shift');
 
-        function updateShifts(agentSelectElement, shiftSelectElement) {
-          const agentId = agentSelectElement.value;
-          shiftSelectElement.innerHTML = '<option value="">Завантаження...</option>'; // Показати завантаження
-          shiftSelectElement.disabled = true; // Заблокувати під час завантаження
+  const DEFAULT_PLACEHOLDER = 'Оберіть зміну';
 
-          if (agentId) {
-            fetch(`${shiftsUrl}?agent_id=${agentId}`)
-              .then(response => {
-                  // Перевіряємо чи відповідь успішна перед парсингом JSON
-                  if (!response.ok) {
-                      throw new Error(`Помилка мережі: ${response.status} ${response.statusText}`);
-                  }
-                  return response.json(); // Парсимо JSON
-              })
-              .then(data => {
-                // Очищуємо перед додаванням нових опцій
-                shiftSelectElement.innerHTML = '<option value="">---------</option>';
+  function placeholderOption(text) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = text;
+    return option;
+  }
 
-                // Перевіряємо чи є помилка від сервера
-                if (data.error) {
-                    console.error('Помилка сервера:', data.error);
-                    const option = document.createElement('option');
-                    option.value = "";
-                    option.textContent = data.error; // Показуємо помилку з сервера
-                    option.disabled = true;
-                    shiftSelectElement.appendChild(option);
-                } else if (data.shifts && data.shifts.length > 0) {
-                  data.shifts.forEach(shift => {
-                    const option = document.createElement('option');
-                    option.value = shift.id;
-                    option.textContent = shift.text;
-                    shiftSelectElement.appendChild(option);
-                  });
-                } else {
-                   const option = document.createElement('option');
-                   option.value = "";
-                   option.textContent = "Немає змін для обміну у цьому місяці";
-                   option.disabled = true;
-                   shiftSelectElement.appendChild(option);
-                }
-                shiftSelectElement.disabled = false; // Розблокувати поле
-              })
-              .catch(error => {
-                console.error('Помилка завантаження змін (fetch/parse):', error);
-                // Очищуємо поле перед показом помилки
-                shiftSelectElement.innerHTML = '<option value="">---------</option>';
-                const option = document.createElement('option');
-                option.value = "";
-                // Виводимо повідомлення про помилку з fetch або загальне
-                option.textContent = `Помилка завантаження: ${error.message || 'Не вдалося завантажити'}`;
-                option.disabled = true;
-                shiftSelectElement.appendChild(option);
-                shiftSelectElement.disabled = false; // Розблокувати поле
-              });
-          } else {
-              // Якщо агент не вибрано, очищуємо і блокуємо
-              shiftSelectElement.innerHTML = '<option value="">Спочатку оберіть агента</option>';
-              shiftSelectElement.disabled = true;
-          }
-        }
+  function setInitialState(shiftSelect, message) {
+    const label = shiftSelect.dataset.placeholder || DEFAULT_PLACEHOLDER;
+    shiftSelect.innerHTML = '';
+    shiftSelect.appendChild(placeholderOption(message || label));
+    shiftSelect.disabled = true;
+  }
 
-        // --- Слухачі подій без змін ---
-        if (fromAgentSelect) {
-            fromAgentSelect.addEventListener('change', function() {
-                updateShifts(this, fromShiftSelect);
-            });
-            if (fromAgentSelect.value) {
-                 updateShifts(fromAgentSelect, fromShiftSelect);
-            } else { // Якщо агент не обраний спочатку
-                 fromShiftSelect.innerHTML = '<option value="">Спочатку оберіть агента</option>';
-                 fromShiftSelect.disabled = true;
-            }
-        }
-        if (toAgentSelect) {
-            toAgentSelect.addEventListener('change', function() {
-                updateShifts(this, toShiftSelect);
-            });
-             if (toAgentSelect.value) {
-                 updateShifts(toAgentSelect, toShiftSelect);
-            } else { // Якщо агент не обраний спочатку
-                 toShiftSelect.innerHTML = '<option value="">Спочатку оберіть агента</option>';
-                 toShiftSelect.disabled = true;
-            }
-        }
-        // --- Кінець слухачів подій ---
+  async function updateShifts(agentSelect, shiftSelect) {
+    if (!agentSelect || !shiftSelect) {
+      return;
+    }
 
+    const agentId = agentSelect.value;
+    const placeholder = shiftSelect.dataset.placeholder || DEFAULT_PLACEHOLDER;
+    const previouslySelected = shiftSelect.dataset.selected || '';
+
+    if (!agentId) {
+      setInitialState(shiftSelect);
+      return;
+    }
+
+    shiftSelect.disabled = true;
+    shiftSelect.innerHTML = '';
+    shiftSelect.appendChild(placeholderOption('Завантаження...'));
+
+    try {
+      const response = await fetch(`${shiftsUrl}?agent_id=${encodeURIComponent(agentId)}`, {
+        credentials: 'same-origin'
       });
-    </script>
-    {# --- КІНЕЦЬ JAVASCRIPT --- #}
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const data = await response.json();
 
-    {% endblock %}
+      shiftSelect.innerHTML = '';
+      shiftSelect.appendChild(placeholderOption(placeholder));
+
+      if (data.error) {
+        console.error('Помилка сервера:', data.error);
+        const errorOption = placeholderOption(data.error);
+        errorOption.disabled = true;
+        shiftSelect.appendChild(errorOption);
+      } else if (data.shifts && data.shifts.length) {
+        data.shifts.forEach((shift) => {
+          const option = document.createElement('option');
+          option.value = shift.id;
+          option.textContent = shift.text;
+          shiftSelect.appendChild(option);
+        });
+      } else {
+        const emptyOption = placeholderOption('Змін не знайдено');
+        emptyOption.disabled = true;
+        shiftSelect.appendChild(emptyOption);
+      }
+
+      if (previouslySelected) {
+        shiftSelect.value = previouslySelected;
+        if (shiftSelect.value !== previouslySelected) {
+          // Якщо попередній вибір відсутній у новому списку
+          shiftSelect.dataset.selected = '';
+        }
+      }
+    } catch (error) {
+      console.error('Помилка завантаження змін:', error);
+      shiftSelect.innerHTML = '';
+      shiftSelect.appendChild(placeholderOption(placeholder));
+      const errorOption = placeholderOption(`Помилка завантаження: ${error.message || 'невідомо'}`);
+      errorOption.disabled = true;
+      shiftSelect.appendChild(errorOption);
+    } finally {
+      shiftSelect.disabled = false;
+    }
+  }
+
+  function attachHandlers(agentSelect, shiftSelect) {
+    if (!agentSelect || !shiftSelect) {
+      return;
+    }
+
+    agentSelect.addEventListener('change', function () {
+      shiftSelect.dataset.selected = '';
+      updateShifts(agentSelect, shiftSelect);
+    });
+
+    shiftSelect.addEventListener('change', function () {
+      shiftSelect.dataset.selected = this.value;
+    });
+
+    if (agentSelect.value) {
+      updateShifts(agentSelect, shiftSelect);
+    } else {
+      setInitialState(shiftSelect, 'Спочатку оберіть агента');
+    }
+  }
+
+  attachHandlers(fromAgentSelect, fromShiftSelect);
+  attachHandlers(toAgentSelect, toShiftSelect);
+});
+</script>
+{% endblock %}
