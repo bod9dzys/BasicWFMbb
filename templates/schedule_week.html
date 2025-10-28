@@ -5,29 +5,33 @@
 
 {% block content %}
 <style>
-  /* Додаткові стилі для таблиці */
+  /* Стилі для таблиці */
   .schedule-table th, .schedule-table td {
-    padding: 0.2rem; /* Трохи зменшимо загальні відступи */
-    font-size: 0.78rem; /* Зменшимо шрифт ще трохи */
-    min-width: 80px; /* **Зробимо колонки днів вужчими** */
+    padding: 0.2rem;
+    font-size: 0.78rem;
+    min-width: 80px; /* Ширина колонок днів */
     max-width: 110px;
     word-wrap: break-word;
-    vertical-align: top; /* Вирівнюємо вміст по верху, щоб плашки краще виглядали */
+    vertical-align: top;
   }
   .schedule-table th:first-child, .schedule-table td:first-child {
-    min-width: 140px; /* Зберігаємо ширину для імені агента */
+    min-width: 140px;
     max-width: 180px;
     text-align: left;
-    vertical-align: middle; /* Вирівнюємо ім'я по центру вертикально */
+    vertical-align: middle;
   }
+  /* Стилі для плашки зміни */
   .shift-details {
-    line-height: 1.2;
-    padding-top: 0.4rem; /* **Збільшуємо верхній відступ плашки** */
-    padding-bottom: 0.4rem; /* **Збільшуємо нижній відступ плашки** */
-    min-height: 60px; /* **Можна додати мінімальну висоту** */
-    display: flex; /* Використовуємо flexbox для кращого контролю */
-    flex-direction: column; /* Елементи один під одним */
-    justify-content: center; /* Центруємо вміст вертикально */
+    line-height: 1.3; /* Трохи збільшимо для читабельності */
+    padding-top: 0.2rem;    /* **Зменшуємо верхній відступ** */
+    padding-bottom: 0.2rem; /* **Зменшуємо нижній відступ** */
+    /* min-height: 60px; - Прибираємо або зменшуємо min-height */
+    display: flex;
+    flex-direction: column;
+    /* justify-content: center; - Прибираємо вертикальне центрування */
+  }
+  .shift-details .small {
+      font-size: 0.75rem; /* **Трохи збільшуємо шрифт всередині плашки** */
   }
 </style>
 
@@ -92,7 +96,7 @@
   <table class="table table-sm table-bordered align-middle schedule-table">
     <thead class="table-light">
       <tr>
-        <th>Агент</th> {# Забрали min-width звідси, керується CSS #}
+        <th>Агент</th>
         {% for d in days %}
           <th class="text-center">
             <div class="fw-semibold">{{ d|date:"D" }}</div>
@@ -105,7 +109,8 @@
       {% for row in table %}
         <tr>
           <td>
-            <div class="fw-semibold">
+            {# ... Ім'я агента ... #}
+             <div class="fw-semibold">
               {{ row.agent.user.get_full_name|default:row.agent.user.username }}
             </div>
             <div class="text-muted small">
@@ -125,14 +130,15 @@
                   </div>
                 {% endfor %}
               {% else %}
-                {# Додамо min-height і сюди, щоб порожні клітинки мали однакову висоту #}
-                <div class="text-muted small" style="min-height: 60px; display: flex; align-items: center; justify-content: center;">—</div>
+                 {# Прибираємо min-height звідси, бо його немає і в .shift-details #}
+                <div class="text-muted small" style="display: flex; align-items: center; justify-content: center; min-height: 40px;">—</div>
               {% endif %}
             </td>
           {% endfor %}
         </tr>
       {% empty %}
-        <tr>
+        {# ... Повідомлення про відсутність даних ... #}
+         <tr>
           <td colspan="8" class="text-center text-muted">Нічого не знайдено за цими фільтрами.</td>
         </tr>
       {% endfor %}
@@ -152,5 +158,4 @@ document.addEventListener('shown.bs.dropdown', function (e) {
   }
 }, true);
 </script>
-
 {% endblock %}
