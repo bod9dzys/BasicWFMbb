@@ -7,39 +7,52 @@
 <style>
   /* Додаткові стилі для таблиці */
   .schedule-table th, .schedule-table td {
-    /* Зменшуємо відступи */
-    padding: 0.25rem;
-    font-size: 0.8rem; /* Зменшуємо шрифт */
-    min-width: 90px; /* Задаємо меншу мінімальну ширину */
-    max-width: 120px; /* Можна додати максимальну */
-    word-wrap: break-word; /* Дозволяємо перенос слів */
+    padding: 0.2rem; /* Трохи зменшимо загальні відступи */
+    font-size: 0.78rem; /* Зменшимо шрифт ще трохи */
+    min-width: 80px; /* **Зробимо колонки днів вужчими** */
+    max-width: 110px;
+    word-wrap: break-word;
+    vertical-align: top; /* Вирівнюємо вміст по верху, щоб плашки краще виглядали */
   }
   .schedule-table th:first-child, .schedule-table td:first-child {
-    min-width: 150px; /* Зберігаємо ширину для імені агента */
-    max-width: 200px;
-    text-align: left; /* Вирівнюємо ім'я ліворуч */
+    min-width: 140px; /* Зберігаємо ширину для імені агента */
+    max-width: 180px;
+    text-align: left;
+    vertical-align: middle; /* Вирівнюємо ім'я по центру вертикально */
   }
   .shift-details {
-    line-height: 1.2; /* Зменшуємо міжрядковий інтервал */
+    line-height: 1.2;
+    padding-top: 0.4rem; /* **Збільшуємо верхній відступ плашки** */
+    padding-bottom: 0.4rem; /* **Збільшуємо нижній відступ плашки** */
+    min-height: 60px; /* **Можна додати мінімальну висоту** */
+    display: flex; /* Використовуємо flexbox для кращого контролю */
+    flex-direction: column; /* Елементи один під одним */
+    justify-content: center; /* Центруємо вміст вертикально */
   }
 </style>
 
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
-  {# --- Блок з кнопками Попередній/Наступний видалено --- #}
+  {# --- Повертаємо кнопки навігації --- #}
+  <div class="btn-group" role="group" aria-label="Навігація тижнями">
+    <a class="btn btn-outline-secondary" href="{% url 'schedule_week' %}?week={{ prev_week }}">‹ Попередній</a>
 
-  <div class="dropdown">
-    <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-      Тиждень: {{ week_start|date:"d.m" }} – {{ days.6|date:"d.m.Y" }}
-    </button>
-    <div id="weeksDropdown" class="dropdown-menu p-0" style="max-height: 320px; overflow: auto; min-width: 320px;">
-      {% for w in weeks %}
-        <a class="dropdown-item {% if forloop.counter0 == active_week_idx %}active{% endif %}"
-           href="{% url 'schedule_week' %}?week={{ w.param }}">
-          {{ w.label }}
-        </a>
-      {% endfor %}
+    <div class="dropdown">
+      <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+        Тиждень: {{ week_start|date:"d.m" }} – {{ days.6|date:"d.m.Y" }}
+      </button>
+      <div id="weeksDropdown" class="dropdown-menu p-0" style="max-height: 320px; overflow: auto; min-width: 320px;">
+        {% for w in weeks %}
+          <a class="dropdown-item {% if forloop.counter0 == active_week_idx %}active{% endif %}"
+             href="{% url 'schedule_week' %}?week={{ w.param }}">
+            {{ w.label }}
+          </a>
+        {% endfor %}
+      </div>
     </div>
+
+    <a class="btn btn-outline-secondary" href="{% url 'schedule_week' %}?week={{ next_week }}">Наступний ›</a>
   </div>
+  {# --- Кінець блоку навігації --- #}
 
   <h2 class="h5 mb-0">
     {{ week_start|date:"d.m.Y" }} — {{ days.6|date:"d.m.Y" }}
@@ -57,10 +70,10 @@
 <div class="collapse" id="filtersCollapse">
   <div class="card card-body mb-3">
     <form method="get" class="row g-3 align-items-end">
-      {# --- Залишаємо поле week для фільтрації, але воно вже не потрібне для навігації --- #}
+      {# --- Залишаємо поле week прихованим, бо кнопки його передають через URL --- #}
       <input type="hidden" name="week" value="{{ request.GET.week|default:week_start|date:'Y-m-d' }}">
 
-      <div class="col-12"> {# Змінено ширину для фільтрів #}
+      <div class="col-12">
         <div class="row g-2">
           {% crispy filter.form %}
         </div>
@@ -68,6 +81,7 @@
 
       <div class="col-12">
         <button type="submit" class="btn btn-dark">Застосувати</button>
+        {# --- Кнопка Скинути тепер також має враховувати поточний тиждень --- #}
         <a href="{% url 'schedule_week' %}?week={{ week_start|date:'Y-m-d' }}" class="btn btn-outline-secondary">Скинути</a>
       </div>
     </form>
@@ -75,13 +89,12 @@
 </div>
 
 <div class="table-responsive">
-  {# Додано клас schedule-table для застосування стилів #}
   <table class="table table-sm table-bordered align-middle schedule-table">
     <thead class="table-light">
       <tr>
-        <th style="min-width: 150px;">Агент</th> {# Зменшено min-width #}
+        <th>Агент</th> {# Забрали min-width звідси, керується CSS #}
         {% for d in days %}
-          <th class="text-center"> {# Зменшено min-width #}
+          <th class="text-center">
             <div class="fw-semibold">{{ d|date:"D" }}</div>
             <div class="text-muted">{{ d|date:"d.m" }}</div>
           </th>
@@ -91,7 +104,7 @@
     <tbody>
       {% for row in table %}
         <tr>
-          <td> {# Залишаємо min-width для імені #}
+          <td>
             <div class="fw-semibold">
               {{ row.agent.user.get_full_name|default:row.agent.user.username }}
             </div>
@@ -100,10 +113,9 @@
             </div>
           </td>
           {% for shifts in row.cells %}
-            <td class="text-center"> {# Забрано min-width звідси, керується стилями .schedule-table td #}
+            <td class="text-center">
               {% if shifts %}
                 {% for s in shifts %}
-                  {# Додано клас shift-details #}
                   <div class="p-1 mb-1 border rounded shift-details">
                     <div class="small"><b>{{ s.direction }}</b></div>
                     <div class="small">{{ s.start|date:"H:i" }}–{{ s.end|date:"H:i" }}</div>
@@ -113,7 +125,8 @@
                   </div>
                 {% endfor %}
               {% else %}
-                <div class="text-muted small">—</div>
+                {# Додамо min-height і сюди, щоб порожні клітинки мали однакову висоту #}
+                <div class="text-muted small" style="min-height: 60px; display: flex; align-items: center; justify-content: center;">—</div>
               {% endif %}
             </td>
           {% endfor %}
