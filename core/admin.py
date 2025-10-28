@@ -2,6 +2,7 @@
 from django.contrib import admin
 from import_export.admin import ImportExportModelAdmin
 from .models import Agent, Shift, ShiftExchange
+from .resources import ShiftResource  # <--- 1. ДОДАЙТЕ ЦЕЙ ІМПОРТ
 
 
 @admin.register(Agent)
@@ -18,6 +19,8 @@ class AgentAdmin(admin.ModelAdmin):
 
 @admin.register(Shift)
 class ShiftAdmin(ImportExportModelAdmin):
+    resource_class = ShiftResource  # <--- 2. ДОДАЙТЕ ЦЕЙ РЯДОК
+
     list_display = ("agent", "start", "end", "direction", "status")
     list_filter = ("direction", "status", "agent__team_lead")
 
@@ -37,6 +40,7 @@ class ShiftExchangeAdmin(admin.ModelAdmin):
         "from_shift__agent__user__username",
         "to_shift__agent__user__username",
     )
+
 
 def _is_in(user, group_name):
     return user.is_superuser or user.groups.filter(name=group_name).exists()
