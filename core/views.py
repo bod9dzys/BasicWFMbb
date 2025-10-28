@@ -225,6 +225,12 @@ def tools(request):
         total_seconds_all = 0
         total_shifts_all = 0
 
+        EXCLUDED_STATUSES = {
+            ShiftStatus.VACATION,
+            ShiftStatus.SICK,
+            ShiftStatus.DAY_OFF,
+        }
+
         for ag in agent_list:
             shifts = (
                 Shift.objects.select_related("agent", "agent__user")
@@ -234,6 +240,7 @@ def tools(request):
 
             agent_seconds = 0
             agent_shift_rows = []
+            counted_shifts = 0
 
             for shift in shifts:
                 overlap_start = max(shift.start, start)
@@ -242,7 +249,11 @@ def tools(request):
                     continue
 
                 seconds = (overlap_end - overlap_start).total_seconds()
-                agent_seconds += seconds
+                counted = shift.status not in EXCLUDED_STATUSES
+
+                if counted:
+                    agent_seconds += seconds
+                    counted_shifts += 1
 
                 agent_shift_rows.append({
                     "id": shift.id,
@@ -254,15 +265,16 @@ def tools(request):
                     "full_start": timezone.localtime(shift.start, tz),
                     "full_end": timezone.localtime(shift.end, tz),
                     "duration_hours": round(seconds / 3600, 2),
+                    "counted": counted,
                 })
 
             total_seconds_all += agent_seconds
-            total_shifts_all += len(agent_shift_rows)
+            total_shifts_all += counted_shifts
 
             agent_summaries.append({
                 "agent": ag,
                 "total_hours": round(agent_seconds / 3600, 2),
-                "total_shifts": len(agent_shift_rows),
+                "total_shifts": counted_shifts,
                 "display_name": ag.user.get_full_name() or ag.user.username,
             })
 

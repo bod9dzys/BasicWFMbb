@@ -58,7 +58,7 @@ class Shift(models.Model):
         max_length=20, choices=ShiftStatus.choices, default=ShiftStatus.WORK
     )
     activity = models.CharField(max_length=100, blank=True)
-    comment = models.TextField(blank=True, null=True)
+    comment = models.TextField(blank=Tru null=True)
 
     history = HistoricalRecords()
 

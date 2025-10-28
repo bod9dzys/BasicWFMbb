@@ -14,6 +14,10 @@
   }
   .tools-card__body {
     padding: 0 2.5rem 2.25rem;
+    overflow: visible;
+  }
+  .tools-wrapper .form-card.glass-card {
+    overflow: visible;
   }
   .tools-badge {
     display: inline-flex;
@@ -235,7 +239,12 @@
                         {% endif %}
                       </div>
                     </td>
-                    <td class="fw-semibold">{{ row.duration_hours }} год</td>
+                    <td class="fw-semibold">
+                      {{ row.duration_hours }} год
+                      {% if not row.counted %}
+                        <div class="text-muted small">не враховується</div>
+                      {% endif %}
+                    </td>
                     <td>{{ row.direction }}</td>
                     <td>{{ row.status }}</td>
                     <td>{{ row.activity|default:"—" }}</td>
