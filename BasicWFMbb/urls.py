@@ -18,6 +18,7 @@ from django.contrib import admin
 from django.urls import path
 from django.contrib.auth import views as auth_views
 
+from core.forms import EmailAuthenticationForm
 from core.views import (
     schedule_week,
     exchange_create,
@@ -29,7 +30,15 @@ from core.views import (
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("accounts/login/", auth_views.LoginView.as_view(template_name="registration/login.html", redirect_authenticated_user=True), name="login"),
+    path(
+        "accounts/login/",
+        auth_views.LoginView.as_view(
+            template_name="registration/login.html",
+            redirect_authenticated_user=True,
+            authentication_form=EmailAuthenticationForm,
+        ),
+        name="login",
+    ),
     path("accounts/logout/", logout_view, name="logout"),
     path("accounts/signup/", signup, name="signup"),
 

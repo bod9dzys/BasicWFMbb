@@ -1,6 +1,6 @@
 # core/forms.py
 from django import forms
-from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
 from django.contrib.auth.models import User
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Submit, Field, Layout
@@ -181,16 +181,65 @@ class SignUpForm(UserCreationForm):
     last_name = forms.CharField(label="Прізвище", max_length=150, required=False)
     email = forms.EmailField(label="Email", required=True)
 
-    class Meta:
+    class Meta(UserCreationForm.Meta):
         model = User
-        fields = ("username", "first_name", "last_name", "email", "password1", "password2")
+        fields = ("username", "email", "first_name", "last_name", "password1", "password2")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        username_field = self.fields["username"]
+        username_field.widget = forms.HiddenInput()
+        username_field.required = False
+        username_field.label = ""
+        field_configs = {
+            "email": {"placeholder": "name@example.com"},
+            "first_name": {"placeholder": "Ім'я"},
+            "last_name": {"placeholder": "Прізвище"},
+            "password1": {"placeholder": "Пароль"},
+            "password2": {"placeholder": "Повторіть пароль"},
+        }
+        for name, attrs in field_configs.items():
+            self.fields[name].widget.attrs.update(attrs)
+        self.fields["password1"].help_text = "Створіть пароль щонайменше з 8 символів."
+        self.fields["password2"].help_text = "Повторіть пароль для підтвердження."
+
+    def clean_email(self):
+        email = self.cleaned_data["email"].lower()
+        if User.objects.filter(email__iexact=email).exists():
+            raise forms.ValidationError("Користувач з таким email уже існує.")
+        return email
+
+    def clean_username(self):
+        email = self.cleaned_data.get("email")
+        if not email:
+            return ""
+        email = email.lower()
+        if User.objects.filter(username__iexact=email).exists():
+            raise forms.ValidationError("Користувач з таким email уже існує.")
+        return email
 
     def save(self, commit=True):
         user = super().save(commit=False)
+        email = self.cleaned_data["email"].lower()
+        user.username = email
+        user.email = email
         user.first_name = self.cleaned_data.get("first_name", "")
         user.last_name = self.cleaned_data.get("last_name", "")
-        user.email = self.cleaned_data["email"]
         if commit:
             user.save()
             Agent.objects.get_or_create(user=user)
         return user
+
+
+class EmailAuthenticationForm(AuthenticationForm):
+    def __init__(self, request=None, *args, **kwargs):
+        super().__init__(request, *args, **kwargs)
+        self.fields["username"].label = "Email"
+        self.fields["username"].widget.attrs.update({"placeholder": "name@example.com"})
+        self.fields["password"].widget.attrs.update({"placeholder": "Пароль"})
+
+    def clean(self):
+        username = self.cleaned_data.get("username")
+        if username:
+            self.cleaned_data["username"] = username.lower()
+        return super().clean()

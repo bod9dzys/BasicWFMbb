@@ -34,20 +34,20 @@
     </div>
     <div class="auth-card__body">
       {% csrf_token %}
+      {{ form.username }}
       {{ form.non_field_errors }}
+      <div class="mb-3">
+        {{ form.email|as_crispy_field }}
+      </div>
       <div class="row g-3">
-        <div class="col-sm-6">
-          {{ form.username|as_crispy_field }}
-        </div>
-        <div class="col-sm-6">
-          {{ form.email|as_crispy_field }}
-        </div>
         <div class="col-sm-6">
           {{ form.first_name|as_crispy_field }}
         </div>
         <div class="col-sm-6">
           {{ form.last_name|as_crispy_field }}
         </div>
+      </div>
+      <div class="row g-3">
         <div class="col-sm-6">
           {{ form.password1|as_crispy_field }}
         </div>
