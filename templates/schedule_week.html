@@ -22,24 +22,29 @@
   }
   /* Стилі для плашки зміни */
   .shift-details {
-    line-height: 1.3; /* Трохи збільшимо для читабельності */
-    padding-top: 0.2rem;    /* **Зменшуємо верхній відступ** */
-    padding-bottom: 0.2rem; /* **Зменшуємо нижній відступ** */
-    /* min-height: 60px; - Прибираємо або зменшуємо min-height */
+    line-height: 1.3;
+    padding-top: 0.2rem;
+    padding-bottom: 0.2rem;
     display: flex;
     flex-direction: column;
-    /* justify-content: center; - Прибираємо вертикальне центрування */
+    min-height: 45px; /* Задамо невелику мін. висоту для узгодженості */
+    justify-content: center; /* Центруємо вміст вертикально */
   }
   .shift-details .small {
-      font-size: 0.75rem; /* **Трохи збільшуємо шрифт всередині плашки** */
+      font-size: 0.75rem;
+  }
+  /* Окремий стиль для плашок Відпустка/Лікарняний */
+  .shift-details-status-only {
+    justify-content: center;
+    align-items: center;
+    font-weight: bold;
+    font-size: 0.75rem;
   }
 </style>
 
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
-  {# --- Повертаємо кнопки навігації --- #}
   <div class="btn-group" role="group" aria-label="Навігація тижнями">
     <a class="btn btn-outline-secondary" href="{% url 'schedule_week' %}?week={{ prev_week }}">‹ Попередній</a>
-
     <div class="dropdown">
       <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
         Тиждень: {{ week_start|date:"d.m" }} – {{ days.6|date:"d.m.Y" }}
@@ -53,15 +58,11 @@
         {% endfor %}
       </div>
     </div>
-
     <a class="btn btn-outline-secondary" href="{% url 'schedule_week' %}?week={{ next_week }}">Наступний ›</a>
   </div>
-  {# --- Кінець блоку навігації --- #}
-
   <h2 class="h5 mb-0">
     {{ week_start|date:"d.m.Y" }} — {{ days.6|date:"d.m.Y" }}
   </h2>
-
   <a href="{% url 'exchange_create' %}" class="btn btn-primary">Обмін змінами</a>
 </div>
 
@@ -74,18 +75,14 @@
 <div class="collapse" id="filtersCollapse">
   <div class="card card-body mb-3">
     <form method="get" class="row g-3 align-items-end">
-      {# --- Залишаємо поле week прихованим, бо кнопки його передають через URL --- #}
       <input type="hidden" name="week" value="{{ request.GET.week|default:week_start|date:'Y-m-d' }}">
-
       <div class="col-12">
         <div class="row g-2">
           {% crispy filter.form %}
         </div>
       </div>
-
       <div class="col-12">
         <button type="submit" class="btn btn-dark">Застосувати</button>
-        {# --- Кнопка Скинути тепер також має враховувати поточний тиждень --- #}
         <a href="{% url 'schedule_week' %}?week={{ week_start|date:'Y-m-d' }}" class="btn btn-outline-secondary">Скинути</a>
       </div>
     </form>
@@ -109,36 +106,56 @@
       {% for row in table %}
         <tr>
           <td>
-            {# ... Ім'я агента ... #}
-             <div class="fw-semibold">
+            <div class="fw-semibold">
               {{ row.agent.user.get_full_name|default:row.agent.user.username }}
             </div>
             <div class="text-muted small">
               {% if row.agent.team_lead %}TL: {{ row.agent.team_lead.get_full_name|default:row.agent.team_lead.username }}{% endif %}
             </div>
           </td>
+
+          {# --- ПОЧАТОК ЗМІНЕНОГО БЛОКУ --- #}
           {% for shifts in row.cells %}
             <td class="text-center">
               {% if shifts %}
                 {% for s in shifts %}
-                  <div class="p-1 mb-1 border rounded shift-details">
-                    <div class="small"><b>{{ s.direction }}</b></div>
-                    <div class="small">{{ s.start|date:"H:i" }}–{{ s.end|date:"H:i" }}</div>
-                    <div class="small text-muted">
-                      {{ s.get_status_display }}{% if s.activity %} · {{ s.activity }}{% endif %}
+
+                  {# Перевіряємо статус #}
+                  {% if s.status == 'sick' or s.status == 'vacation' %}
+                    {# 1. Тільки статус (Лікарняний, Відпустка) #}
+                    <div class="p-1 mb-1 border rounded shift-details shift-details-status-only">
+                      {{ s.get_status_display }}
                     </div>
-                  </div>
+
+                  {% elif s.status == 'working' %}
+                    {# 2. Тільки напрямок і час (Робоча зміна) #}
+                    <div class="p-1 mb-1 border rounded shift-details">
+                      <div class="small"><b>{{ s.direction }}</b></div>
+                      <div class="small">{{ s.start|date:"H:i" }}–{{ s.end|date:"H:i" }}</div>
+                      {# Рядок статусу відсутній #}
+                    </div>
+
+                  {% else %}
+                    {# 3. Все інше (напр. Вихідний) - показуємо все #}
+                    <div class="p-1 mb-1 border rounded shift-details">
+                      <div class="small"><b>{{ s.direction }}</b></div>
+                      <div class="small">{{ s.start|date:"H:i" }}–{{ s.end|date:"H:i" }}</div>
+                      <div class="small text-muted">
+                        {{ s.get_status_display }}{% if s.activity %} · {{ s.activity }}{% endif %}
+                      </div>
+                    </div>
+                  {% endif %}
+
                 {% endfor %}
               {% else %}
-                 {# Прибираємо min-height звідси, бо його немає і в .shift-details #}
-                <div class="text-muted small" style="display: flex; align-items: center; justify-content: center; min-height: 40px;">—</div>
+                <div class="text-muted small" style="display: flex; align-items: center; justify-content: center; min-height: 45px;">—</div>
               {% endif %}
             </td>
           {% endfor %}
+          {# --- КІНЕЦЬ ЗМІНЕНОГО БЛОКУ --- #}
         </tr>
       {% empty %}
-        {# ... Повідомлення про відсутність даних ... #}
-         <tr>
+        <tr>
           <td colspan="8" class="text-center text-muted">Нічого не знайдено за цими фільтрами.</td>
         </tr>
       {% endfor %}
@@ -158,4 +175,5 @@ document.addEventListener('shown.bs.dropdown', function (e) {
   }
 }, true);
 </script>
+
 {% endblock %}
