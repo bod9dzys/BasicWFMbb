@@ -12,19 +12,70 @@
       crossorigin="anonymous"
     >
     <style>
+      :root {
+        --brand-accent: #4cc9f0;
+        --surface: rgba(255, 255, 255, 0.92);
+        --dark: rgba(15, 23, 42, 0.95);
+      }
+      body {
+        font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+        color: #1f2937;
+        background: linear-gradient(180deg, #f5f7fb 0%, #e7ecf7 100%);
+        min-height: 100vh;
+      }
+      .navbar {
+        background: var(--dark);
+        backdrop-filter: blur(12px);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+      }
       .navbar-brand {
-        transition: color 0.2s ease-in-out, background-color 0.2s ease-in-out,
-          box-shadow 0.2s ease-in-out;
-        padding: 0.25rem 0.75rem;
-        border-radius: 0.5rem;
+        color: #f8f9fa;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        font-size: 1.15rem;
+        padding: 0.35rem 0.95rem;
+        border-radius: 0.75rem;
+        transition: color 0.2s ease, background-color 0.2s ease,
+          box-shadow 0.2s ease, transform 0.2s ease;
       }
       .navbar-brand:hover,
       .navbar-brand:focus {
-        color: #212529;
-        background-color: rgba(255, 255, 255, 0.9);
-        box-shadow: 0 0 12px rgba(255, 255, 255, 0.75);
+        color: #0f172a;
+        background-color: var(--brand-accent);
+        box-shadow: 0 12px 30px rgba(76, 201, 240, 0.35);
+        transform: translateY(-1px);
         text-decoration: none;
       }
+      .admin-btn {
+        border: none;
+        border-radius: 999px;
+        padding: 0.4rem 1.1rem;
+        background: rgba(255, 255, 255, 0.14);
+        color: #f8f9fa;
+        font-weight: 500;
+        transition: color 0.2s ease, background-color 0.2s ease,
+          box-shadow 0.2s ease;
+      }
+      .admin-btn:hover,
+      .admin-btn:focus {
+        background: #f8f9fa;
+        color: #0f172a;
+        box-shadow: 0 10px 25px rgba(15, 23, 42, 0.25);
+      }
+      main.container {
+        max-width: 1120px;
+        margin: 2.5rem auto;
+        background: var(--surface);
+        border-radius: 1.25rem;
+        padding: 2.5rem 2rem;
+        box-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
+      }
+      .alert {
+        border: none;
+        border-radius: 0.9rem;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+      }
+    </style>
     </style>
   </head>
   <body class="bg-light">
@@ -34,7 +85,7 @@
 
         {# --- ДОДАНО ЦЕЙ БЛОК --- #}
         <div class="ms-auto"> {# ms-auto вирівнює елемент праворуч #}
-          <a href="{% url 'admin:index' %}" class="btn btn-outline-light btn-sm">Admin</a> {# Використовуємо url 'admin:index' #}
+          <a href="{% url 'admin:index' %}" class="btn btn-sm admin-btn">Admin</a> {# Використовуємо url 'admin:index' #}
         </div>
         {# --- КІНЕЦЬ ДОДАНОГО БЛОКУ --- #}
 
