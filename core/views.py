@@ -35,6 +35,23 @@ def _weeks_of_year(year: int, tz):
         i += 1
     return weeks
 
+
+def _format_shift_label(shift: Shift, agent) -> str:
+    """
+    Build human-readable label for a shift with localised times.
+    Shows end date if it differs from start date.
+    """
+    tz = timezone.get_current_timezone()
+    start_local = timezone.localtime(shift.start, tz)
+    end_local = timezone.localtime(shift.end, tz)
+
+    end_part = (
+        f"{end_local:%d.%m %H:%M}"
+        if start_local.date() != end_local.date()
+        else f"{end_local:%H:%M}"
+    )
+    return f"{agent} · {start_local:%d.%m %H:%M}–{end_part}"
+
 @login_required
 def schedule_week(request):
     # 1) Визначаємо базову дату тижня з ?week=YYYY-MM-DD або беремо сьогодні
@@ -134,12 +151,8 @@ def exchange_create(request):
             comment = form.cleaned_data.get("comment", "")
             agent_a_before = sh1.agent
             agent_b_before = sh2.agent
-            shift_a_label = (
-                f"{agent_a_before} · {sh1.start:%d.%m %H:%M}–{sh1.end:%H:%M}"
-            )
-            shift_b_label = (
-                f"{agent_b_before} · {sh2.start:%d.%m %H:%M}–{sh2.end:%H:%M}"
-            )
+            shift_a_label = _format_shift_label(sh1, agent_a_before)
+            shift_b_label = _format_shift_label(sh2, agent_b_before)
             try:
                 with transaction.atomic():
                     ShiftExchange.objects.create(
