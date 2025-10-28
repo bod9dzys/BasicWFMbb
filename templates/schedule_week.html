@@ -120,14 +120,14 @@
               {% if shifts %}
                 {% for s in shifts %}
 
-                  {# Перевіряємо статус #}
+                    {# Перевіряємо статус #}
                   {% if s.status == 'sick' or s.status == 'vacation' %}
                     {# 1. Тільки статус (Лікарняний, Відпустка) #}
                     <div class="p-1 mb-1 border rounded shift-details shift-details-status-only">
                       {{ s.get_status_display }}
                     </div>
 
-                  {% elif s.status == 'working' %}
+                  {% elif s.status == 'work' %} {# <--- ВИПРАВЛЕНО ТУТ ('working' на 'work') #}
                     {# 2. Тільки напрямок і час (Робоча зміна) #}
                     <div class="p-1 mb-1 border rounded shift-details">
                       <div class="small"><b>{{ s.direction }}</b></div>
@@ -145,11 +145,6 @@
                       </div>
                     </div>
                   {% endif %}
-
-                {% endfor %}
-              {% else %}
-                <div class="text-muted small" style="display: flex; align-items: center; justify-content: center; min-height: 45px;">—</div>
-              {% endif %}
             </td>
           {% endfor %}
           {# --- КІНЕЦЬ ЗМІНЕНОГО БЛОКУ --- #}
