@@ -37,12 +37,10 @@ def _weeks_of_year(year: int, tz):
 
 def _build_agent_shift_map():
     tz = timezone.get_current_timezone()
-    cutoff = timezone.now() - timedelta(days=30)
     shifts = (
         Shift.objects
         .select_related("agent", "agent__user")
-        .filter(start__gte=cutoff)
-        .order_by("start")
+        .order_by("-start")
     )
     data = {}
     for shift in shifts:
