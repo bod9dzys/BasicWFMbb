@@ -10,6 +10,7 @@ from .filters import ShiftFilter
 from .forms import ExchangeCreateForm
 from django.contrib import messages
 from .services import can_swap
+from calendar import monthrange
 
 
 def _monday(dt):
