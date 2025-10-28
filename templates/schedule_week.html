@@ -31,14 +31,14 @@
     justify-content: center; /* Центруємо вміст вертикально */
   }
   .shift-details .small {
-      font-size: 0.75rem;
+      font-size: 0.82rem; /* **Збільшено шрифт (був 0.75rem)** */
   }
   /* Окремий стиль для плашок Відпустка/Лікарняний */
   .shift-details-status-only {
     justify-content: center;
     align-items: center;
     font-weight: bold;
-    font-size: 0.75rem;
+    font-size: 0.82rem; /* **Збільшено шрифт (був 0.75rem)** */
   }
 </style>
 
@@ -102,7 +102,7 @@
         {% endfor %}
       </tr>
     </thead>
-<tbody>
+    <tbody>
       {% for row in table %}
         <tr>
           <td>
@@ -154,7 +154,6 @@
             </td>
           {% endfor %}
         </tr>
-      {# *** Ось де має бути тег {% empty %} - для зовнішнього циклу {% for row in table %} *** #}
       {% empty %}
         <tr>
           <td colspan="8" class="text-center text-muted">Нічого не знайдено за цими фільтрами.</td>
