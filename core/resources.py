@@ -6,6 +6,21 @@ from django.contrib.auth.models import User
 from django.contrib.auth.hashers import make_password
 from django.utils.text import slugify
 
+UKRAINIAN_DIRECTION_MAP = {
+    "дзвінки": "calls",
+    "дзінки": "calls",
+    "дзвонки": "calls",
+    "кіл-центр": "calls",
+    "тікети": "tickets",
+    "тикети": "tickets",
+    "tickets": "tickets",
+    "чати": "chats",
+    "чат": "chats",
+    "соцмережі": "chats",
+    "чати/соцмережі": "chats",
+}
+DEFAULT_DIRECTION = "calls"
+
 # Допоміжний віджет, щоб просто читати значення без перетворень
 class SimpleReadWidget(Widget):
     def clean(self, value, row=None, *args, **kwargs):
@@ -121,10 +136,17 @@ class ShiftResource(resources.ModelResource):
             kwargs['skip_row'] = True # Пропускаємо цей рядок
             # Або додати помилку до рядка
             # self.add_instance_error(None, row_number, row, ValidationError(f"Агента '{username}' не знайдено."))
+            return
 
         else:
             # Якщо ім'я агента порожнє, пропускаємо рядок
             kwargs['skip_row'] = True
+            return
+
+        # Нормалізуємо напрямок (direction) з урахуванням активності
+        current_direction = row.get('direction')
+        activity_hint = row.get('activity')
+        row['direction'] = self._normalize_direction(current_direction, activity_hint)
 
 
     # Можна видалити цей метод, якщо він був у попередній версії
@@ -166,3 +188,36 @@ class ShiftResource(resources.ModelResource):
             counter += 1
         taken_usernames.add(candidate)
         return candidate
+
+    @staticmethod
+    def _normalize_direction(direction_value, activity_value=None):
+        def _clean(value):
+            return " ".join(str(value).strip().split()) if value else ""
+
+        label = _clean(direction_value)
+        fallback = _clean(activity_value)
+        normalized = label.casefold()
+
+        if normalized in {"calls", "tickets", "chats"}:
+            return normalized
+
+        if normalized:
+            mapped = UKRAINIAN_DIRECTION_MAP.get(normalized)
+            if mapped:
+                return mapped
+            print(f"ПОПЕРЕДЖЕННЯ: невідомий напрям '{label}'. Використовую значення за замовчуванням '{DEFAULT_DIRECTION}'.")
+            return DEFAULT_DIRECTION
+
+        # Якщо direction порожній - пробуємо activity
+        fallback_normalized = fallback.casefold()
+        if fallback_normalized in {"calls", "tickets", "chats"}:
+            return fallback_normalized
+
+        mapped = UKRAINIAN_DIRECTION_MAP.get(fallback_normalized)
+        if mapped:
+            return mapped
+
+        if fallback:
+            print(f"ПОПЕРЕДЖЕННЯ: невідома активність '{fallback}'. Використовую значення за замовчуванням '{DEFAULT_DIRECTION}'.")
+
+        return DEFAULT_DIRECTION

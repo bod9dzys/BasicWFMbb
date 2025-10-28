@@ -1,11 +1,9 @@
 # -*- coding: utf-8 -*-
 import csv
-import re
 from datetime import datetime, time, timedelta
 
 import openpyxl
 from openpyxl import Workbook
-from unidecode import unidecode
 
 # =========================
 # 1) НАЛАШТУВАННЯ
@@ -39,32 +37,24 @@ STATUS_MAP = {
 # Назви колонок
 HEADERS = ["id", "agent", "start", "end", "direction", "status", "activity", "comment"]
 
-
-# =========================
-# 2) ГЕНЕРАЦІЯ USERNAME
-# =========================
-def generate_username(full_name: str) -> str:
-    """
-    Генерує username з повного імені.
-    Приклад: "Ступак Максим" -> "mstupak"
-    """
-    latin_name = unidecode(full_name)
-    parts = latin_name.split()
-    if len(parts) >= 2:
-        last_name = parts[0]
-        first_name = parts[1]
-        username_raw = f"{first_name[0]}{last_name}"
-    elif len(parts) == 1:
-        username_raw = parts[0]
-    else:
-        return f"user_{int(datetime.now().timestamp())}"
-
-    username_clean = re.sub(r"[^a-zA-Z0-9]", "", username_raw).lower()
-    return username_clean
+# Мапа активностей -> напрямів
+ACTIVITY_DIRECTION_MAP = {
+    "дзвінки": "calls",
+    "дзінки": "calls",
+    "дзвонки": "calls",
+    "calls": "calls",
+    "тікети": "tickets",
+    "тикети": "tickets",
+    "tickets": "tickets",
+    "чати": "chats",
+    "чат": "chats",
+    "chats": "chats",
+}
+DEFAULT_DIRECTION = "calls"
 
 
 # =========================
-# 3) ДОПОМОЖНІ РЕЧІ ДЛЯ ВИВОДУ
+# 2) ДОПОМОЖНІ РЕЧІ ДЛЯ ВИВОДУ
 # =========================
 class OutputWriter:
     """
@@ -153,13 +143,10 @@ def convert_schedule_xlsx(input_path, output_basename, sheet_name=None, output_f
     # ініціалізуємо writer під обраний формат
     writer = OutputWriter(output_format, output_basename)
 
-    # Кеш на згенеровані логіни
-    generated_usernames_cache = {}
-
-    # Заголовок з датами в першому рядку
+    # Заголовок з датами в першому рядку (починаючи з 3-ї колонки, бо A=активність, B=агент)
     header_row = sheet[1]
     dates = []
-    for cell in header_row[1:]:
+    for cell in header_row[2:]:
         if isinstance(cell.value, datetime):
             dates.append(cell.value.date())
         elif cell.value:
@@ -181,20 +168,16 @@ def convert_schedule_xlsx(input_path, output_basename, sheet_name=None, output_f
 
     # Проходимо по кожному агенту (починаючи з 2 рядка)
     for row in sheet.iter_rows(min_row=2):
-        agent_full_name_cell = row[0].value
+        activity_cell = row[0].value if len(row) > 0 else None
+        agent_full_name_cell = row[1].value if len(row) > 1 else None
         if not agent_full_name_cell:
             continue
 
         agent_full_name = str(agent_full_name_cell).strip()
 
-        if agent_full_name not in generated_usernames_cache:
-            agent_username = generate_username(agent_full_name)
-            generated_usernames_cache[agent_full_name] = agent_username
-            print(f" [Info] Згенеровано: '{agent_full_name}' -> '{agent_username}'")
-        else:
-            agent_username = generated_usernames_cache[agent_full_name]
+        direction_code, activity_label = _resolve_direction_and_activity(activity_cell)
 
-        shifts_cells = row[1:]
+        shifts_cells = row[2:]
 
         for date_obj, shift_cell in zip(dates, shifts_cells):
             shift_raw_value = shift_cell.value
@@ -206,9 +189,9 @@ def convert_schedule_xlsx(input_path, output_basename, sheet_name=None, output_f
             try:
                 out = {
                     "id": "",
-                    "agent": agent_username,
-                    "direction": "calls",
-                    "activity": "",
+                    "agent": agent_full_name,
+                    "direction": direction_code,
+                    "activity": activity_label,
                     "comment": "",
                 }
 
@@ -258,7 +241,27 @@ def convert_schedule_xlsx(input_path, output_basename, sheet_name=None, output_f
 
 
 # =========================
-# 5) ЗАПУСК
+# 5) ДОПОМІЖНІ ФУНКЦІЇ
+# =========================
+def _resolve_direction_and_activity(activity_cell):
+    label = ""
+    if activity_cell is not None:
+        label = str(activity_cell).strip()
+    normalized = label.casefold()
+    direction = ACTIVITY_DIRECTION_MAP.get(normalized)
+
+    if not direction:
+        if normalized in {"calls", "tickets", "chats"}:
+            direction = normalized
+        else:
+            if label:
+                print(f" [Warn] Невідома активність '{label}'. Використовую напрям за замовчуванням '{DEFAULT_DIRECTION}'.")
+            direction = DEFAULT_DIRECTION
+    return direction, label
+
+
+# =========================
+# 6) ЗАПУСК
 # =========================
 if __name__ == "__main__":
     convert_schedule_xlsx(
