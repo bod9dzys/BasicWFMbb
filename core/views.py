@@ -134,8 +134,12 @@ def exchange_create(request):
             comment = form.cleaned_data.get("comment", "")
             agent_a_before = sh1.agent
             agent_b_before = sh2.agent
-            shift_a_label = f"{agent_a_before} · {sh1.start:%d.%m %H:%M}"
-            shift_b_label = f"{agent_b_before} · {sh2.start:%d.%m %H:%M}"
+            shift_a_label = (
+                f"{agent_a_before} · {sh1.start:%d.%m %H:%M}–{sh1.end:%H:%M}"
+            )
+            shift_b_label = (
+                f"{agent_b_before} · {sh2.start:%d.%m %H:%M}–{sh2.end:%H:%M}"
+            )
             try:
                 with transaction.atomic():
                     ShiftExchange.objects.create(
@@ -158,7 +162,7 @@ def exchange_create(request):
                     request,
                     f"Обмін виконано: {shift_a_label} ⇄ {shift_b_label}.",
                 )
-                return redirect("schedule_week")
+                form = ExchangeCreateForm(request.user)
 
     return render(request, "exchange_form.html", {"form": form})
 
