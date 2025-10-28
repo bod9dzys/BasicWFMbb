@@ -191,32 +191,43 @@ def exchange_reject(request, pk: int):
 def get_agent_shifts_for_month(request):
     agent_id = request.GET.get('agent_id')
     shifts_data = []
-    if agent_id:
+    error_message = None # Для збереження тексту помилки
+
+    if not agent_id:
+        error_message = "Не надано ID агента."
+    else:
         try:
-            agent = Agent.objects.get(pk=agent_id)
+            # Перевіряємо, чи agent_id є числом
+            agent_id_int = int(agent_id)
+            agent = Agent.objects.get(pk=agent_id_int)
             now = timezone.localdate()
-            # Визначаємо перший і останній день поточного місяця
             first_day = now.replace(day=1)
-            # monthrange тепер доступна
             last_day_num = monthrange(now.year, now.month)[1]
             last_day = now.replace(day=last_day_num)
 
-            # Робимо datetime для порівняння
             start_dt = timezone.make_aware(datetime.combine(first_day, datetime.min.time()))
-            end_dt = timezone.make_aware(datetime.combine(last_day, datetime.max.time()))
+            # Кінець місяця - це початок наступного дня після останнього дня місяця
+            end_dt_exclusive = timezone.make_aware(datetime.combine(last_day + timedelta(days=1), datetime.min.time()))
 
-            # Фільтруємо зміни агента за поточний місяць
             shifts = Shift.objects.filter(
                 agent=agent,
+                # Зміни, що починаються В межах місяця
                 start__gte=start_dt,
-                start__lte=end_dt,
+                start__lt=end_dt_exclusive, # Використовуємо < для кінця місяця
                 status__in=['work', 'training', 'meeting', 'onboard']
             ).select_related('agent__user').order_by('start')
 
-            shifts_data = [{'id': shift.id, 'text': str(shift)} for shift in shifts]
-        except Agent.DoesNotExist:
-            pass
-        except ValueError:
-             pass
+            # Переконуємось, що str(shift) працює
+            shifts_data = [{'id': shift.id, 'text': str(shift) if shift else 'Невдалося відобразити зміну'} for shift in shifts]
 
-    return JsonResponse({'shifts': shifts_data})
+        except Agent.DoesNotExist:
+            error_message = f"Агент з ID {agent_id} не знайдений."
+        except ValueError:
+             error_message = f"Невірний ID агента: {agent_id}."
+        except Exception as e:
+             # Логуємо непередбачену помилку на сервері
+             print(f"Помилка у get_agent_shifts_for_month: {e}")
+             error_message = "Внутрішня помилка сервера при отриманні змін."
+
+    # Завжди повертаємо JSON, включаючи помилку, якщо вона є
+    return JsonResponse({'shifts': shifts_data, 'error': error_message})
