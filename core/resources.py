@@ -44,7 +44,7 @@ class ShiftResource(resources.ModelResource):
         # Ми робимо це вручну в before_import
         clean_model_instances = True # Дозволяє before_import_row модифікувати дані рядка
 
-    def before_import(self, dataset, using_transactions, dry_run, **kwargs):
+    def before_import(self, dataset, using_transactions=None, dry_run=False, **kwargs):
         """
         Знаходить або створює всіх User/Agent ОДИН РАЗ перед імпортом.
         Заповнює кеш _agent_cache = {username: agent_id}.
