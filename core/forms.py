@@ -1,126 +1,97 @@
 # core/forms.py
 from django import forms
 from crispy_forms.helper import FormHelper
-from crispy_forms.layout import Submit, Layout, Row, Column
-from .models import Shift, ShiftExchange, Agent
-
-class DummyForm(forms.Form):
-    name = forms.CharField(label="Ім'я")
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.helper = FormHelper()
-        self.helper.form_method = "post"
-        self.helper.add_input(Submit("submit", "Зберегти"))
+from crispy_forms.layout import Submit, Layout, Field
+from .models import Shift, Agent # Додано Agent
+from django.contrib.auth.models import User # Якщо потрібно фільтрувати за User
 
 class ExchangeCreateForm(forms.Form):
+    # Поля для вибору агентів
     from_agent = forms.ModelChoiceField(
-        queryset=Agent.objects.none(),
-        label="Агент (віддає зміну)",
-        empty_label="Оберіть агента",
-    )
-    from_shift = forms.ModelChoiceField(
-        queryset=Shift.objects.none(),
-        label="Зміна агента",
-        empty_label="Оберіть зміну",
+        queryset=Agent.objects.select_related('user').filter(active=True).order_by('user__last_name', 'user__first_name'),
+        label="Агент 1 (чия зміна)",
+        required=True
     )
     to_agent = forms.ModelChoiceField(
-        queryset=Agent.objects.none(),
-        label="Агент (отримує зміну)",
-        empty_label="Оберіть агента",
+        queryset=Agent.objects.select_related('user').filter(active=True).order_by('user__last_name', 'user__first_name'),
+        label="Агент 2 (на чию зміну)",
+        required=True
+    )
+
+    # Поля змін тепер починаються порожніми
+    from_shift = forms.ModelChoiceField(
+        queryset=Shift.objects.none(), # Починаємо з порожнього queryset
+        label="Зміна Агента 1",
+        required=True
+        # Додаємо id для JavaScript
+        # widget=forms.Select(attrs={'id': 'id_from_shift'}) # Або зробимо це в шаблоні/crispy forms
     )
     to_shift = forms.ModelChoiceField(
-        queryset=Shift.objects.none(),
-        label="Зміна на обмін",
-        empty_label="Оберіть зміну",
+        queryset=Shift.objects.none(), # Починаємо з порожнього queryset
+        label="Зміна Агента 2",
+        required=True
+        # widget=forms.Select(attrs={'id': 'id_to_shift'}) # Або зробимо це в шаблоні/crispy forms
     )
+
     comment = forms.CharField(label="Коментар", widget=forms.Textarea, required=False)
 
     def __init__(self, user, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.user = user
+        self.user = user # Зберігаємо користувача для можливих перевірок
 
-        agents_qs = Agent.objects.select_related("user").filter(active=True).order_by(
-            "user__last_name", "user__first_name", "user__username"
-        )
-        shifts_qs = Shift.objects.select_related("agent", "agent__user").order_by("-start")
-
-        self.fields["from_agent"].queryset = agents_qs
-        self.fields["to_agent"].queryset = agents_qs
-        self.fields["from_agent"].widget.attrs.setdefault("class", "form-select")
-        self.fields["to_agent"].widget.attrs.setdefault("class", "form-select")
-
-        # Автовибір поточного агента якщо існує
-        user_agent = agents_qs.filter(user=user).first()
-        if user_agent and not self.is_bound:
-            self.initial.setdefault("from_agent", user_agent.pk)
-
-        from_agent = self._resolve_agent(self.data.get("from_agent") if self.is_bound else self.initial.get("from_agent"), agents_qs)
-        to_agent = self._resolve_agent(self.data.get("to_agent") if self.is_bound else self.initial.get("to_agent"), agents_qs)
-
-        if from_agent:
-            self.fields["from_shift"].queryset = shifts_qs.filter(agent=from_agent)
-        else:
-            self.fields["from_shift"].queryset = Shift.objects.none()
-
-        if to_agent:
-            self.fields["to_shift"].queryset = shifts_qs.filter(agent=to_agent)
-        else:
-            self.fields["to_shift"].queryset = Shift.objects.none()
-
-        self._set_shift_widget_attrs("from_shift", self.data.get("from_shift") if self.is_bound else None)
-        self._set_shift_widget_attrs("to_shift", self.data.get("to_shift") if self.is_bound else None)
+        # Обмеження вибору першого агента (якщо це не адмін/менеджер)
+        # Припускаємо, що звичайний агент може ініціювати обмін лише своєю зміною
+        if not user.is_staff and hasattr(user, 'agent'): # Перевіряємо чи це агент
+             self.fields['from_agent'].queryset = Agent.objects.filter(user=user)
+             self.fields['from_agent'].initial = user.agent
+             self.fields['from_agent'].disabled = True # Не даємо змінювати себе
 
         self.helper = FormHelper()
         self.helper.form_method = "post"
+        # Оновлюємо Layout для нових полів та додаємо ID для JS
         self.helper.layout = Layout(
-            Row(
-                Column("from_agent", css_class="col-md-6"),
-                Column("from_shift", css_class="col-md-6"),
-            ),
-            Row(
-                Column("to_agent", css_class="col-md-6"),
-                Column("to_shift", css_class="col-md-6"),
-            ),
-            "comment",
+            Field('from_agent', id='id_from_agent'),
+            Field('from_shift', id='id_from_shift'),
+            Field('to_agent', id='id_to_agent'),
+            Field('to_shift', id='id_to_shift'),
+            'comment',
+            Submit("submit", "Запросити обмін")
         )
-        self.helper.add_input(Submit("submit", "Запросити обмін"))
 
-    @staticmethod
-    def _resolve_agent(value, queryset):
-        try:
-            if value:
-                return queryset.get(pk=value)
-        except (ValueError, queryset.model.DoesNotExist):
-            return None
-        return None
-
+    # Важливо: Додати clean метод для перевірки, що вибрані зміни належать вибраним агентам
     def clean(self):
-        cleaned = super().clean()
-        from_agent = cleaned.get("from_agent")
-        to_agent = cleaned.get("to_agent")
-        from_shift = cleaned.get("from_shift")
-        to_shift = cleaned.get("to_shift")
+        cleaned_data = super().clean()
+        from_agent = cleaned_data.get("from_agent")
+        to_agent = cleaned_data.get("to_agent")
+        from_shift_id = self.data.get("from_shift") # Отримуємо ID з POST даних
+        to_shift_id = self.data.get("to_shift")       # Отримуємо ID з POST даних
 
-        if not all([from_agent, to_agent, from_shift, to_shift]):
-            return cleaned
+        if from_agent and to_agent and from_agent == to_agent:
+             raise forms.ValidationError("Оберіть двох різних агентів.")
 
-        if from_shift.agent_id != from_agent.id:
-            self.add_error("from_shift", "Ця зміна не належить обраному агенту.")
-        if to_shift.agent_id != to_agent.id:
-            self.add_error("to_shift", "Ця зміна не належить обраному агенту.")
+        # Перевіряємо належність змін після того, як JS заповнить поля
+        if from_agent and from_shift_id:
+            try:
+                from_shift = Shift.objects.get(pk=from_shift_id)
+                if from_shift.agent != from_agent:
+                     raise forms.ValidationError("Обрана 'Зміна Агента 1' не належить Агенту 1.")
+                cleaned_data['from_shift'] = from_shift # Додаємо об'єкт Shift до cleaned_data
+            except Shift.DoesNotExist:
+                 raise forms.ValidationError("Обрана 'Зміна Агента 1' не існує.")
 
-        if from_shift.id == to_shift.id:
-            raise forms.ValidationError("Вибери дві різні зміни.")
+        if to_agent and to_shift_id:
+            try:
+                to_shift = Shift.objects.get(pk=to_shift_id)
+                if to_shift.agent != to_agent:
+                     raise forms.ValidationError("Обрана 'Зміна Агента 2' не належить Агенту 2.")
+                cleaned_data['to_shift'] = to_shift # Додаємо об'єкт Shift до cleaned_data
+            except Shift.DoesNotExist:
+                 raise forms.ValidationError("Обрана 'Зміна Агента 2' не існує.")
 
-        if from_agent.id == to_agent.id:
-            raise forms.ValidationError("Оберіть різних агентів для обміну.")
+        # Додаткова перевірка, якщо from_shift та to_shift були обрані
+        f_shift = cleaned_data.get("from_shift")
+        t_shift = cleaned_data.get("to_shift")
+        if f_shift and t_shift and f_shift.id == t_shift.id:
+             raise forms.ValidationError("Виберіть дві різні зміни для обміну.")
 
-        return cleaned
-
-    def _set_shift_widget_attrs(self, field_name, selected_value):
-        field = self.fields[field_name]
-        placeholder = field.empty_label or ""
-        attrs = field.widget.attrs
-        attrs.setdefault("class", "form-select")
-        attrs.setdefault("data-placeholder", placeholder)
-        attrs["data-selected"] = str(selected_value) if selected_value else ""
+        return cleaned_data

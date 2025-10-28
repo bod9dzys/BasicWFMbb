@@ -185,3 +185,37 @@ def exchange_reject(request, pk: int):
     ex.save()
     messages.warning(request, "Обмін відхилено.")
     return redirect("schedule_week")
+
+@login_required # Або інша перевірка доступу
+def get_agent_shifts_for_month(request):
+    agent_id = request.GET.get('agent_id')
+    shifts_data = []
+    if agent_id:
+        try:
+            agent = Agent.objects.get(pk=agent_id)
+            now = timezone.localdate()
+            # Визначаємо перший і останній день поточного місяця
+            first_day = now.replace(day=1)
+            last_day_num = monthrange(now.year, now.month)[1]
+            last_day = now.replace(day=last_day_num)
+
+            # Робимо datetime для порівняння
+            start_dt = timezone.make_aware(datetime.combine(first_day, datetime.min.time()))
+            end_dt = timezone.make_aware(datetime.combine(last_day, datetime.max.time()))
+
+            # Фільтруємо зміни агента за поточний місяць
+            # Додаємо фільтр статусу, щоб не можна було обміняти неробочі зміни
+            shifts = Shift.objects.filter(
+                agent=agent,
+                start__gte=start_dt,
+                start__lte=end_dt, # Використовуємо start__lte, щоб включити зміни, що закінчуються наступного дня
+                status__in=['work', 'training', 'meeting', 'onboard'] # Тільки ті, що можна міняти
+            ).select_related('agent__user').order_by('start')
+
+            shifts_data = [{'id': shift.id, 'text': str(shift)} for shift in shifts]
+        except Agent.DoesNotExist:
+            pass # Агент не знайдений, повернемо порожній список
+        except ValueError:
+             pass # Невірний agent_id
+
+    return JsonResponse({'shifts': shifts_data})
