@@ -197,6 +197,7 @@ def get_agent_shifts_for_month(request):
             now = timezone.localdate()
             # Визначаємо перший і останній день поточного місяця
             first_day = now.replace(day=1)
+            # monthrange тепер доступна
             last_day_num = monthrange(now.year, now.month)[1]
             last_day = now.replace(day=last_day_num)
 
@@ -205,18 +206,17 @@ def get_agent_shifts_for_month(request):
             end_dt = timezone.make_aware(datetime.combine(last_day, datetime.max.time()))
 
             # Фільтруємо зміни агента за поточний місяць
-            # Додаємо фільтр статусу, щоб не можна було обміняти неробочі зміни
             shifts = Shift.objects.filter(
                 agent=agent,
                 start__gte=start_dt,
-                start__lte=end_dt, # Використовуємо start__lte, щоб включити зміни, що закінчуються наступного дня
-                status__in=['work', 'training', 'meeting', 'onboard'] # Тільки ті, що можна міняти
+                start__lte=end_dt,
+                status__in=['work', 'training', 'meeting', 'onboard']
             ).select_related('agent__user').order_by('start')
 
             shifts_data = [{'id': shift.id, 'text': str(shift)} for shift in shifts]
         except Agent.DoesNotExist:
-            pass # Агент не знайдений, повернемо порожній список
+            pass
         except ValueError:
-             pass # Невірний agent_id
+             pass
 
     return JsonResponse({'shifts': shifts_data})
