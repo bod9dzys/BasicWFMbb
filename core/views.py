@@ -1,8 +1,9 @@
 # core/views.py
 from datetime import timedelta, datetime
 from django.utils import timezone
-from django.shortcuts import render, get_object_or_404, redirect
+from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required, permission_required
+from django.db import transaction
 
 from django.http import JsonResponse
 from .models import Shift, ShiftExchange, Agent, ShiftStatus
@@ -130,34 +131,36 @@ def exchange_create(request):
         if not ok:
             messages.error(request, msg)
         else:
-            ex = ShiftExchange.objects.create(
-                from_shift=sh1, to_shift=sh2, requested_by=request.user, comment=form.cleaned_data.get("comment", "")
-            )
-            messages.success(request, "Запит на обмін створено і очікує рішення.")
-            return redirect("exchange_create")
+            comment = form.cleaned_data.get("comment", "")
+            agent_a_before = sh1.agent
+            agent_b_before = sh2.agent
+            shift_a_label = f"{agent_a_before} · {sh1.start:%d.%m %H:%M}"
+            shift_b_label = f"{agent_b_before} · {sh2.start:%d.%m %H:%M}"
+            try:
+                with transaction.atomic():
+                    ShiftExchange.objects.create(
+                        from_shift=sh1,
+                        to_shift=sh2,
+                        requested_by=request.user,
+                        comment=comment,
+                        approved=True,
+                    )
+                    sh1.agent, sh2.agent = agent_b_before, agent_a_before
+                    sh1.save(update_fields=["agent"])
+                    sh2.save(update_fields=["agent"])
+            except Exception as exc:
+                messages.error(
+                    request,
+                    f"Не вдалося виконати обмін. Помилка: {exc}",
+                )
+            else:
+                messages.success(
+                    request,
+                    f"Обмін виконано: {shift_a_label} ⇄ {shift_b_label}.",
+                )
+                return redirect("schedule_week")
 
     return render(request, "exchange_form.html", {"form": form})
-
-
-@login_required
-@permission_required("core.approve_exchange", raise_exception=True)
-def exchange_approve(request, pk: int):
-    ex = get_object_or_404(ShiftExchange, pk=pk)
-    ex.approved = True
-    ex.save()
-    messages.success(request, "Обмін схвалено.")
-    # тут пізніше зробимо реальну заміну агентів/змін, зараз лише статус
-    return redirect("schedule_week")
-
-
-@login_required
-@permission_required("core.approve_exchange", raise_exception=True)
-def exchange_reject(request, pk: int):
-    ex = get_object_or_404(ShiftExchange, pk=pk)
-    ex.approved = False
-    ex.save()
-    messages.warning(request, "Обмін відхилено.")
-    return redirect("schedule_week")
 
 @login_required  # Або інша перевірка доступу
 def get_agent_shifts_for_month(request):

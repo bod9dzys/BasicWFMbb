@@ -27,6 +27,43 @@
     </nav>
 
     <main class="container py-4">
+      {% if messages %}
+        <div class="mb-3">
+          {% for message in messages %}
+            {% with message.level_tag as tag %}
+              {% if tag == 'error' %}
+                {% with 'danger' as alert_class %}
+                  <div class="alert alert-{{ alert_class }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                  </div>
+                {% endwith %}
+              {% elif tag == 'warning' %}
+                {% with 'warning' as alert_class %}
+                  <div class="alert alert-{{ alert_class }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                  </div>
+                {% endwith %}
+              {% elif tag == 'success' %}
+                {% with 'success' as alert_class %}
+                  <div class="alert alert-{{ alert_class }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                  </div>
+                {% endwith %}
+              {% else %}
+                {% with 'info' as alert_class %}
+                  <div class="alert alert-{{ alert_class }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                  </div>
+                {% endwith %}
+              {% endif %}
+            {% endwith %}
+          {% endfor %}
+        </div>
+      {% endif %}
       {% block content %}{% endblock %}
     </main>
 

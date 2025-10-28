@@ -16,14 +16,12 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path
-from core.views import schedule_week, exchange_create, exchange_approve, exchange_reject, get_agent_shifts_for_month
+from core.views import schedule_week, exchange_create, get_agent_shifts_for_month
 
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('schedule/', schedule_week, name='schedule_week'),
     path('exchange/', exchange_create, name='exchange_create'),
-    path('exchange/<int:pk>/approve/', exchange_approve, name='exchange_approve'),
-    path('exchange/<int:pk>/reject/', exchange_reject, name='exchange_reject'),
     path('ajax/get-agent-shifts/', get_agent_shifts_for_month, name='ajax_get_agent_shifts'),
 ]
