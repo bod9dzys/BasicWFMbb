@@ -97,15 +97,25 @@
             <td style="min-width: 180px;">
               {% if shifts %}
                 {% for s in shifts %}
-                  <div class="p-1 mb-1 border rounded">
-                    <div class="d-flex justify-content-between">
-                      <span class="small">{{ s.direction }}</span>
-                      <span class="small">{{ s.start|date:"H:i" }}–{{ s.end|date:"H:i" }}</span>
-                    </div>
-                    <div class="small text-muted">
-                      {{ s.get_status_display }}{% if s.activity %} · {{ s.activity }}{% endif %}
-                    </div>
-                  </div>
+                    {% for shifts in row.cells %}
+                                <td style="min-width: 180px;" class="text-center"> {# Додано text-center до <td> #}
+                                  {% if shifts %}
+                                    {% for s in shifts %}
+                                      <div class="p-1 mb-1 border rounded">
+                                        {# --- Змінений блок --- #}
+                                        <div class="small"><b>{{ s.direction }}</b></div> {# Direction зверху #}
+                                        <div class="small">{{ s.start|date:"H:i" }}–{{ s.end|date:"H:i" }}</div> {# Час посередині #}
+                                        <div class="small text-muted"> {# Статус знизу #}
+                                          {{ s.get_status_display }}{% if s.activity %} · {{ s.activity }}{% endif %}
+                                        </div>
+                                        {# --- Кінець зміненого блоку --- #}
+                                      </div>
+                                    {% endfor %}
+                                  {% else %}
+                                    <div class="text-muted small">—</div>
+                                  {% endif %}
+                                </td>
+                              {% endfor %}
                 {% endfor %}
               {% else %}
                 <div class="text-muted small">—</div>
