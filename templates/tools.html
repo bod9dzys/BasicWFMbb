@@ -67,6 +67,37 @@
   .results-table tbody td {
     vertical-align: middle;
   }
+.tools-card__body .ts-wrapper {
+    width: 100%;
+  }
+  .tools-card__body .ts-control {
+    min-height: 56px;
+    border-radius: 1rem;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    padding: 0.75rem 1rem;
+    font-size: 1rem;
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: inset 0 1px 3px rgba(15, 23, 42, 0.04);
+  }
+  .tools-card__body .ts-control input {
+    font-size: 1rem;
+  }
+  .tools-card__body .ts-control.focus {
+    border-color: #4895ef;
+    box-shadow: 0 0 0 0.25rem rgba(72, 149, 239, 0.25);
+    background: #fff;
+  }
+  .tools-card__body .ts-dropdown {
+    max-height: 320px;
+    border-radius: 1rem;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    box-shadow: 0 18px 36px rgba(15, 23, 42, 0.12);
+  }
+  .tools-card__body .ts-dropdown .option {
+    padding: 0.75rem 0.9rem;
+    font-size: 0.98rem;
+    border-radius: 0.85rem;
+  }
   @media (max-width: 767.98px) {
     .tools-card__header,
     .tools-card__body {
@@ -92,16 +123,16 @@
     <div class="tools-card__body">
       <form method="get" class="row g-3 align-items-end">
         {{ form.non_field_errors }}
-        <div class="col-md-4">
+        <div class="col-sm-6 col-md-6 col-lg-3">
           {{ form.team_lead|as_crispy_field }}
         </div>
-        <div class="col-md-4">
+        <div class="col-sm-6 col-md-6 col-lg-3">
           {{ form.agent|as_crispy_field }}
         </div>
-        <div class="col-sm-6 col-md-4">
+        <div class="col-sm-6 col-md-6 col-lg-3">
           {{ form.start|as_crispy_field }}
         </div>
-        <div class="col-sm-6 col-md-4">
+        <div class="col-sm-6 col-md-6 col-lg-3">
           {{ form.end|as_crispy_field }}
         </div>
         <div class="col-12 col-md-auto">
