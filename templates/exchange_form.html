@@ -61,18 +61,118 @@ document.addEventListener('DOMContentLoaded', function () {
 
   const DEFAULT_PLACEHOLDER = 'Оберіть зміну';
 
-  function placeholderOption(text) {
-    const option = document.createElement('option');
-    option.value = '';
-    option.textContent = text;
-    return option;
+  function ensureBasePlaceholder(selectEl) {
+    if (!selectEl) {
+      return DEFAULT_PLACEHOLDER;
+    }
+    if (!selectEl.dataset.basePlaceholder) {
+      const firstOption = selectEl.options && selectEl.options.length ? selectEl.options[0] : null;
+      const candidate =
+        selectEl.dataset.placeholder ||
+        selectEl.getAttribute('placeholder') ||
+        (firstOption && !firstOption.value && firstOption.textContent.trim()
+          ? firstOption.textContent.trim()
+          : DEFAULT_PLACEHOLDER);
+      selectEl.dataset.basePlaceholder = candidate || DEFAULT_PLACEHOLDER;
+    }
+    return selectEl.dataset.basePlaceholder;
   }
 
-  function setInitialState(shiftSelect, message) {
-    const label = shiftSelect.dataset.placeholder || DEFAULT_PLACEHOLDER;
-    shiftSelect.innerHTML = '';
-    shiftSelect.appendChild(placeholderOption(message || label));
-    shiftSelect.disabled = true;
+  function applyPlaceholderToTomSelect(ts, placeholderText) {
+    if (!ts) {
+      return;
+    }
+    ts.settings.placeholder = placeholderText;
+    if (typeof ts.updatePlaceholder === 'function') {
+      ts.updatePlaceholder();
+    } else if (ts.control_input) {
+      ts.control_input.setAttribute('placeholder', placeholderText);
+    }
+  }
+
+  function resetSelect(selectEl, placeholderOverride, disable = true) {
+    if (!selectEl) {
+      return;
+    }
+    const basePlaceholder = ensureBasePlaceholder(selectEl);
+    const placeholderText = placeholderOverride || basePlaceholder;
+    const ts = selectEl.tomselect || null;
+
+    if (ts) {
+      ts.clear(true);
+      ts.clearOptions();
+      ts.addOption({ value: '', text: placeholderText });
+      ts.refreshOptions(false);
+      if (selectEl.multiple) {
+        ts.setValue([], true);
+      } else {
+        ts.setValue('', true);
+      }
+      applyPlaceholderToTomSelect(ts, placeholderText);
+      if (disable) {
+        ts.disable();
+      } else {
+        ts.enable();
+      }
+    } else {
+      selectEl.innerHTML = '';
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = placeholderText;
+      selectEl.appendChild(option);
+      selectEl.value = '';
+      selectEl.disabled = disable;
+    }
+    selectEl.disabled = disable;
+  }
+
+  function populateSelect(selectEl, options, selectedValue) {
+    if (!selectEl) {
+      return;
+    }
+    const basePlaceholder = ensureBasePlaceholder(selectEl);
+    const ts = selectEl.tomselect || null;
+    const normalizedOptions = options.map((opt) => ({
+      value: String(opt.value),
+      text: opt.text,
+    }));
+
+    if (ts) {
+      ts.clear(true);
+      ts.clearOptions();
+      ts.addOption({ value: '', text: basePlaceholder });
+      normalizedOptions.forEach((opt) => ts.addOption(opt));
+      ts.refreshOptions(false);
+      const normalizedSelected = selectedValue != null ? String(selectedValue) : '';
+      const hasSelected =
+        normalizedSelected &&
+        normalizedOptions.some((opt) => opt.value === normalizedSelected);
+      if (selectEl.multiple) {
+        ts.setValue(hasSelected ? [normalizedSelected] : [], true);
+      } else {
+        ts.setValue(hasSelected ? normalizedSelected : '', true);
+      }
+      applyPlaceholderToTomSelect(ts, basePlaceholder);
+      ts.enable();
+    } else {
+      selectEl.innerHTML = '';
+      const placeholderOption = document.createElement('option');
+      placeholderOption.value = '';
+      placeholderOption.textContent = basePlaceholder;
+      selectEl.appendChild(placeholderOption);
+      normalizedOptions.forEach((opt) => {
+        const option = document.createElement('option');
+        option.value = opt.value;
+        option.textContent = opt.text;
+        selectEl.appendChild(option);
+      });
+      const hasSelected =
+        selectedValue &&
+        normalizedOptions.some((opt) => opt.value === String(selectedValue));
+      selectEl.value = hasSelected ? String(selectedValue) : '';
+      selectEl.disabled = false;
+    }
+    selectEl.disabled = false;
   }
 
   async function updateShifts(agentSelect, shiftSelect) {
@@ -81,17 +181,14 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     const agentId = agentSelect.value;
-    const placeholder = shiftSelect.dataset.placeholder || DEFAULT_PLACEHOLDER;
     const previouslySelected = shiftSelect.dataset.selected || '';
 
     if (!agentId) {
-      setInitialState(shiftSelect);
+      resetSelect(shiftSelect, 'Спочатку оберіть агента');
       return;
     }
 
-    shiftSelect.disabled = true;
-    shiftSelect.innerHTML = '';
-    shiftSelect.appendChild(placeholderOption('Завантаження...'));
+    resetSelect(shiftSelect, 'Завантаження...');
 
     try {
       const response = await fetch(`${shiftsUrl}?agent_id=${encodeURIComponent(agentId)}`, {
@@ -102,43 +199,39 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       const data = await response.json();
 
-      shiftSelect.innerHTML = '';
-      shiftSelect.appendChild(placeholderOption(placeholder));
-
       if (data.error) {
         console.error('Помилка сервера:', data.error);
-        const errorOption = placeholderOption(data.error);
-        errorOption.disabled = true;
-        shiftSelect.appendChild(errorOption);
+        resetSelect(shiftSelect, data.error);
       } else if (data.shifts && data.shifts.length) {
-        data.shifts.forEach((shift) => {
-          const option = document.createElement('option');
-          option.value = shift.id;
-          option.textContent = shift.text;
-          shiftSelect.appendChild(option);
-        });
+        populateSelect(
+          shiftSelect,
+          data.shifts.map((shift) => ({
+            value: shift.id,
+            text: shift.text,
+          })),
+          previouslySelected
+        );
       } else {
-        const emptyOption = placeholderOption('Змін не знайдено');
-        emptyOption.disabled = true;
-        shiftSelect.appendChild(emptyOption);
+        resetSelect(shiftSelect, 'Змін не знайдено');
       }
 
       if (previouslySelected) {
-        shiftSelect.value = previouslySelected;
-        if (shiftSelect.value !== previouslySelected) {
-          // Якщо попередній вибір відсутній у новому списку
+        const ts = shiftSelect.tomselect || null;
+        if (ts) {
+          const items = Array.isArray(ts.items) ? ts.items : [];
+          if (!items.includes(String(previouslySelected))) {
+            shiftSelect.dataset.selected = '';
+          }
+        } else if (shiftSelect.value !== String(previouslySelected)) {
           shiftSelect.dataset.selected = '';
         }
       }
     } catch (error) {
       console.error('Помилка завантаження змін:', error);
-      shiftSelect.innerHTML = '';
-      shiftSelect.appendChild(placeholderOption(placeholder));
-      const errorOption = placeholderOption(`Помилка завантаження: ${error.message || 'невідомо'}`);
-      errorOption.disabled = true;
-      shiftSelect.appendChild(errorOption);
-    } finally {
-      shiftSelect.disabled = false;
+      resetSelect(
+        shiftSelect,
+        `Помилка завантаження: ${error.message || 'невідомо'}`
+      );
     }
   }
 
@@ -159,7 +252,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (agentSelect.value) {
       updateShifts(agentSelect, shiftSelect);
     } else {
-      setInitialState(shiftSelect, 'Спочатку оберіть агента');
+      resetSelect(shiftSelect, 'Спочатку оберіть агента');
     }
   }
 

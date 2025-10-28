@@ -10,22 +10,26 @@ class ExchangeCreateForm(forms.Form):
         queryset=Agent.objects.select_related("user").filter(active=True),
         label="Агент 1 (чия зміна)",
         required=True,
+        empty_label="Оберіть агента",
     )
     to_agent = forms.ModelChoiceField(
         queryset=Agent.objects.select_related("user").filter(active=True),
         label="Агент 2 (на чию зміну)",
         required=True,
+        empty_label="Оберіть агента",
     )
 
     from_shift = forms.ModelChoiceField(
         queryset=Shift.objects.none(),
         label="Зміна Агента 1",
         required=True,
+        empty_label="Оберіть зміну",
     )
     to_shift = forms.ModelChoiceField(
         queryset=Shift.objects.none(),
         label="Зміна Агента 2",
         required=True,
+        empty_label="Оберіть зміну",
     )
 
     comment = forms.CharField(label="Коментар", widget=forms.Textarea, required=False)

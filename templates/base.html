@@ -11,6 +11,12 @@
       integrity="sha384-...."
       crossorigin="anonymous"
     >
+    <link
+      href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css"
+      rel="stylesheet"
+      integrity="sha384-...."
+      crossorigin="anonymous"
+    >
     <style>
       :root {
         --brand-accent: #4cc9f0;
@@ -240,6 +246,50 @@
         left: 0;
         z-index: 3;
       }
+      .ts-control {
+        width: 100%;
+        border-radius: 0.9rem;
+        border: 1px solid var(--border-soft);
+        padding: 0.45rem 0.65rem;
+        background: rgba(255, 255, 255, 0.94);
+        transition: border-color 0.2s ease, box-shadow 0.2s ease,
+          background-color 0.2s ease;
+      }
+      .ts-wrapper {
+        width: 100%;
+      }
+      .ts-control.focus {
+        border-color: var(--brand-accent-strong);
+        box-shadow: 0 0 0 0.25rem rgba(72, 149, 239, 0.18);
+        background-color: #fff;
+      }
+      .ts-dropdown {
+        border-radius: 1rem;
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        box-shadow: 0 18px 36px rgba(15, 23, 42, 0.12);
+        padding: 0.5rem;
+      }
+      .ts-dropdown .create,
+      .ts-dropdown .no-results,
+      .ts-dropdown .option {
+        border-radius: 0.75rem;
+        padding: 0.55rem 0.75rem;
+        font-size: 0.86rem;
+      }
+      .ts-dropdown .option.active {
+        background: rgba(76, 201, 240, 0.18);
+        color: var(--text-primary);
+      }
+      .ts-dropdown-input {
+        border-radius: 0.75rem;
+        border: 1px solid rgba(148, 163, 184, 0.28);
+        margin-bottom: 0.5rem;
+        padding: 0.45rem 0.65rem;
+      }
+      .ts-dropdown-input:focus {
+        border-color: var(--brand-accent-strong);
+        box-shadow: 0 0 0 0.2rem rgba(72, 149, 239, 0.14);
+      }
       @media (max-width: 1199.98px) {
         main.container {
           padding: 2.5rem 2.25rem;
@@ -322,5 +372,70 @@
       integrity="sha384-...."
       crossorigin="anonymous"
     ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"
+      integrity="sha384-...."
+      crossorigin="anonymous"
+    ></script>
+    <script>
+      document.addEventListener("DOMContentLoaded", function () {
+        const selects = document.querySelectorAll("select:not([data-no-enhance])");
+        selects.forEach((select) => {
+          const firstOption = select.options.length ? select.options[0] : null;
+          if (
+            firstOption &&
+            !firstOption.value &&
+            /^-+$/.test(firstOption.textContent.trim())
+          ) {
+            firstOption.textContent = "";
+          }
+          if (firstOption && !firstOption.value && !firstOption.textContent.trim()) {
+            const fallbackPlaceholder =
+              select.dataset.placeholder ||
+              select.getAttribute("placeholder") ||
+              "Оберіть значення";
+            firstOption.textContent = fallbackPlaceholder;
+          }
+        });
+
+        if (typeof TomSelect === "undefined") {
+          return;
+        }
+
+        selects.forEach((select) => {
+          if (select.tomselect) {
+            return;
+          }
+          const firstOption = select.options.length ? select.options[0] : null;
+          const placeholder =
+            select.dataset.placeholder ||
+            (firstOption && !firstOption.value && firstOption.textContent.trim()
+              ? firstOption.textContent.trim()
+              : select.getAttribute("placeholder") || "Оберіть значення");
+          if (firstOption && !firstOption.value) {
+            firstOption.textContent = placeholder;
+          } else if (!select.dataset.placeholder) {
+            select.setAttribute("placeholder", placeholder);
+          }
+          const plugins = {
+            dropdown_input: {},
+          };
+          if (select.multiple) {
+            plugins.remove_button = { title: "Видалити" };
+          }
+          new TomSelect(select, {
+            plugins,
+            create: false,
+            allowEmptyOption: true,
+            placeholder,
+            render: {
+              no_results: function () {
+                return '<div class="no-results text-muted">Нічого не знайдено</div>';
+              },
+            },
+          });
+        });
+      });
+    </script>
   </body>
 </html>
