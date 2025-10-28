@@ -46,6 +46,8 @@ class ExchangeCreateForm(forms.Form):
 
         self.fields["from_agent"].queryset = agents_qs
         self.fields["to_agent"].queryset = agents_qs
+        self.fields["from_agent"].widget.attrs.setdefault("class", "form-select")
+        self.fields["to_agent"].widget.attrs.setdefault("class", "form-select")
 
         # Автовибір поточного агента якщо існує
         user_agent = agents_qs.filter(user=user).first()
@@ -64,6 +66,9 @@ class ExchangeCreateForm(forms.Form):
             self.fields["to_shift"].queryset = shifts_qs.filter(agent=to_agent)
         else:
             self.fields["to_shift"].queryset = Shift.objects.none()
+
+        self._set_shift_widget_attrs("from_shift", self.data.get("from_shift") if self.is_bound else None)
+        self._set_shift_widget_attrs("to_shift", self.data.get("to_shift") if self.is_bound else None)
 
         self.helper = FormHelper()
         self.helper.form_method = "post"
@@ -111,3 +116,11 @@ class ExchangeCreateForm(forms.Form):
             raise forms.ValidationError("Оберіть різних агентів для обміну.")
 
         return cleaned
+
+    def _set_shift_widget_attrs(self, field_name, selected_value):
+        field = self.fields[field_name]
+        placeholder = field.empty_label or ""
+        attrs = field.widget.attrs
+        attrs.setdefault("class", "form-select")
+        attrs.setdefault("data-placeholder", placeholder)
+        attrs["data-selected"] = str(selected_value) if selected_value else ""

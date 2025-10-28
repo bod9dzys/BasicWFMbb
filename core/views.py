@@ -1,10 +1,11 @@
 # core/views.py
+import json
 from datetime import timedelta, datetime
 from django.utils import timezone
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required, permission_required
 
-from .models import Shift, ShiftExchange
+from .models import Shift, ShiftExchange, Agent, ShiftStatus
 from .filters import ShiftFilter
 from .forms import ExchangeCreateForm
 from django.contrib import messages
@@ -33,6 +34,33 @@ def _weeks_of_year(year: int, tz):
         start += timedelta(days=7)
         i += 1
     return weeks
+
+def _build_agent_shift_map():
+    tz = timezone.get_current_timezone()
+    cutoff = timezone.now() - timedelta(days=30)
+    shifts = (
+        Shift.objects
+        .select_related("agent", "agent__user")
+        .filter(start__gte=cutoff)
+        .order_by("start")
+    )
+    data = {}
+    for shift in shifts:
+        start_local = timezone.localtime(shift.start, tz)
+        end_local = timezone.localtime(shift.end, tz)
+        direction = shift.get_direction_display()
+        status = shift.get_status_display()
+        label_parts = [
+            f"{start_local:%d.%m %H:%M}–{end_local:%H:%M}",
+            direction,
+        ]
+        if shift.status != ShiftStatus.WORK:
+            label_parts.append(status)
+        data.setdefault(str(shift.agent_id), []).append({
+            "id": shift.pk,
+            "label": " · ".join(label_parts),
+        })
+    return data
 
 @login_required
 def schedule_week(request):
@@ -135,7 +163,9 @@ def exchange_create(request):
             )
             messages.success(request, "Запит на обмін створено і очікує рішення.")
             return redirect("exchange_create")
-    return render(request, "exchange_form.html", {"form": form})
+
+    agent_shifts = _build_agent_shift_map()
+    return render(request, "exchange_form.html", {"form": form, "agent_shifts_json": json.dumps(agent_shifts, ensure_ascii=False)})
 
 
 @login_required
