@@ -40,14 +40,30 @@ class ShiftFilter(django_filters.FilterSet):
         field_name="start",
         lookup_expr="gte",
         label="Початок з",
-        widget=forms.DateTimeInput(attrs={"type": "datetime-local"}),
+        input_formats=("%Y-%m-%d %H:%M",),
+        widget=forms.DateTimeInput(
+            format="%Y-%m-%d %H:%M",
+            attrs={
+                "class": "form-control datetime-picker",
+                "placeholder": "Оберіть дату й час",
+                "autocomplete": "off",
+            },
+        ),
     )
 
     end__lte = django_filters.DateTimeFilter(
         field_name="end",
         lookup_expr="lte",
         label="Кінець до",
-        widget=forms.DateTimeInput(attrs={"type": "datetime-local"}),
+        input_formats=("%Y-%m-%d %H:%M",),
+        widget=forms.DateTimeInput(
+            format="%Y-%m-%d %H:%M",
+            attrs={
+                "class": "form-control datetime-picker",
+                "placeholder": "Оберіть дату й час",
+                "autocomplete": "off",
+            },
+        ),
     )
 
     class Meta:
