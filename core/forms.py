@@ -1,7 +1,10 @@
 # core/forms.py
+from datetime import timedelta
+
 from django import forms
 from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
 from django.contrib.auth.models import User
+from django.utils import timezone
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Submit, Field, Layout
 from .models import Shift, Agent
@@ -243,3 +246,49 @@ class EmailAuthenticationForm(AuthenticationForm):
         if username:
             self.cleaned_data["username"] = username.lower()
         return super().clean()
+
+
+class ToolsHoursForm(forms.Form):
+    agent = forms.ModelChoiceField(
+        queryset=Agent.objects.select_related("user").filter(active=True),
+        label="Агент",
+        empty_label="Оберіть агента",
+    )
+    start = forms.DateTimeField(
+        label="Початок періоду",
+        widget=forms.DateTimeInput(
+            format="%Y-%m-%d %H:%M",
+            attrs={
+                "class": "form-control datetime-picker",
+                "placeholder": "Оберіть дату й час",
+                "autocomplete": "off",
+            },
+        ),
+    )
+    end = forms.DateTimeField(
+        label="Кінець періоду",
+        widget=forms.DateTimeInput(
+            format="%Y-%m-%d %H:%M",
+            attrs={
+                "class": "form-control datetime-picker",
+                "placeholder": "Оберіть дату й час",
+                "autocomplete": "off",
+            },
+        ),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        now = timezone.now()
+        start_default = (now - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
+        end_default = now.replace(second=0, microsecond=0)
+        self.fields["start"].initial = start_default
+        self.fields["end"].initial = end_default
+
+    def clean(self):
+        cleaned = super().clean()
+        start = cleaned.get("start")
+        end = cleaned.get("end")
+        if start and end and start > end:
+            raise forms.ValidationError("Початок періоду не може бути пізніше завершення.")
+        return cleaned

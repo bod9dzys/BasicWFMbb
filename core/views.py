@@ -9,7 +9,7 @@ from django.db import transaction
 from django.http import JsonResponse
 from .models import Shift, ShiftExchange, Agent, ShiftStatus
 from .filters import ShiftFilter
-from .forms import ExchangeCreateForm, SignUpForm
+from .forms import ExchangeCreateForm, SignUpForm, ToolsHoursForm
 from django.contrib import messages
 from .services import can_swap
 
@@ -194,6 +194,72 @@ def exchange_create(request):
                 form = ExchangeCreateForm(request.user)
 
     return render(request, "exchange_form.html", {"form": form})
+
+
+@login_required
+def tools(request):
+    form = ToolsHoursForm(request.GET or None)
+    summary = None
+    shift_rows = []
+
+    if form.is_valid():
+        agent = form.cleaned_data["agent"]
+        start = form.cleaned_data["start"]
+        end = form.cleaned_data["end"]
+        tz = timezone.get_current_timezone()
+
+        if timezone.is_naive(start):
+            start = timezone.make_aware(start, tz)
+        if timezone.is_naive(end):
+            end = timezone.make_aware(end, tz)
+
+        shifts = (
+            Shift.objects.select_related("agent", "agent__user")
+            .filter(agent=agent, start__lt=end, end__gt=start)
+            .order_by("start")
+        )
+
+        total_seconds = 0
+        for shift in shifts:
+            overlap_start = max(shift.start, start)
+            overlap_end = min(shift.end, end)
+            if overlap_start >= overlap_end:
+                continue
+
+            seconds = (overlap_end - overlap_start).total_seconds()
+            total_seconds += seconds
+
+            shift_rows.append({
+                "id": shift.id,
+                "direction": shift.get_direction_display(),
+                "status": shift.get_status_display(),
+                "activity": shift.activity,
+                "start": timezone.localtime(overlap_start, tz),
+                "end": timezone.localtime(overlap_end, tz),
+                "full_start": timezone.localtime(shift.start, tz),
+                "full_end": timezone.localtime(shift.end, tz),
+                "duration_hours": round(seconds / 3600, 2),
+            })
+
+        summary = {
+            "agent": agent,
+            "start": timezone.localtime(start, tz),
+            "end": timezone.localtime(end, tz),
+            "total_hours": round(total_seconds / 3600, 2),
+            "total_shifts": len(shift_rows),
+        }
+
+        shift_rows.sort(key=lambda row: row["start"])
+
+    return render(
+        request,
+        "tools.html",
+        {
+            "form": form,
+            "summary": summary,
+            "shift_rows": shift_rows,
+        },
+    )
 
 @login_required  # Або інша перевірка доступу
 def get_agent_shifts_for_month(request):

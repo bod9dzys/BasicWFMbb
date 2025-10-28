@@ -129,6 +129,12 @@
         color: var(--text-primary);
         box-shadow: 0 12px 24px rgba(76, 201, 240, 0.2);
       }
+      .btn-soft.active {
+        background: var(--brand-accent);
+        border-color: var(--brand-accent-strong);
+        color: #0f172a;
+        box-shadow: 0 12px 24px rgba(76, 201, 240, 0.18);
+      }
       .btn-primary {
         background: var(--brand-accent);
         border-color: var(--brand-accent);
@@ -331,6 +337,33 @@
         border-color: var(--brand-accent);
         color: #0f172a;
       }
+      .developer-tag {
+        color: rgba(248, 249, 250, 0.55);
+        font-size: 0.68rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      .nav-item-link {
+        color: rgba(248, 249, 250, 0.7);
+        font-weight: 500;
+        border-radius: 0.75rem;
+        padding: 0.45rem 0.95rem;
+        transition: color 0.2s ease, background-color 0.2s ease,
+          box-shadow 0.2s ease, transform 0.2s ease;
+      }
+      .nav-item-link:hover,
+      .nav-item-link:focus {
+        color: #0f172a;
+        background: rgba(248, 249, 250, 0.85);
+        box-shadow: 0 10px 24px rgba(248, 249, 250, 0.18);
+        transform: translateY(-1px);
+        text-decoration: none;
+      }
+      .nav-item-link.active {
+        color: #0f172a;
+        background: var(--brand-accent);
+        box-shadow: 0 10px 24px rgba(76, 201, 240, 0.28);
+      }
       @media (max-width: 1199.98px) {
         main.container {
           padding: 2.5rem 2.25rem;
@@ -358,7 +391,31 @@
       <div class="container">
         <a class="navbar-brand" href="{% if user.is_authenticated %}{% url 'schedule_week' %}{% else %}{% url 'login' %}{% endif %}">Schedule</a>
 
-        <div class="ms-auto d-flex align-items-center gap-2">
+        {% if user.is_authenticated %}
+          <div class="d-none d-sm-flex align-items-center ms-4 gap-2">
+            <a href="{% url 'schedule_week' %}"
+               class="nav-item-link {% if request.resolver_match.url_name == 'schedule_week' %}active{% endif %}">
+              Розклад
+            </a>
+            <a href="{% url 'tools' %}"
+               class="nav-item-link {% if request.resolver_match.url_name == 'tools' %}active{% endif %}">
+              Інструменти
+            </a>
+          </div>
+          <div class="d-flex d-sm-none align-items-center ms-3 gap-2">
+            <a href="{% url 'schedule_week' %}"
+               class="btn btn-soft btn-sm {% if request.resolver_match.url_name == 'schedule_week' %}active{% endif %}">
+              Розклад
+            </a>
+            <a href="{% url 'tools' %}"
+               class="btn btn-soft btn-sm {% if request.resolver_match.url_name == 'tools' %}active{% endif %}">
+              Інструменти
+            </a>
+          </div>
+        {% endif %}
+
+        <div class="ms-auto d-flex align-items-center gap-3">
+          <span class="developer-tag d-none d-sm-inline">Developed by Bohdan Dzys</span>
           {% if user.is_authenticated %}
             <span class="text-light small fw-semibold d-none d-md-inline">
               {{ user.get_full_name|default:user.username }}

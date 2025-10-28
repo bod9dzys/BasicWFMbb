@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}Інструменти{% endblock %}
+
+{% block content %}
+<style>
+  .tools-wrapper {
+    display: grid;
+    gap: 1.75rem;
+  }
+  .tools-card__header {
+    padding: 2rem 2.5rem 1.25rem;
+  }
+  .tools-card__body {
+    padding: 0 2.5rem 2.25rem;
+  }
+  .tools-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.75rem;
+    border-radius: 999px;
+    background: rgba(76, 201, 240, 0.2);
+    color: #0f172a;
+    font-weight: 600;
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .tools-summary {
+    display: grid;
+    gap: 0.75rem;
+  }
+  .summary-metric {
+    background: rgba(76, 201, 240, 0.14);
+    border-radius: 1rem;
+    padding: 1rem 1.25rem;
+    border: 1px solid rgba(76, 201, 240, 0.22);
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+  .summary-metric__label {
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(15, 23, 42, 0.56);
+  }
+  .summary-metric__value {
+    font-size: 1.65rem;
+    font-weight: 600;
+    color: #0f172a;
+  }
+  .results-table-wrapper {
+    border-radius: 1.2rem;
+    background: rgba(255, 255, 255, 0.88);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    box-shadow: 0 20px 45px rgba(15, 23, 42, 0.1);
+    overflow: hidden;
+  }
+  .results-table thead th {
+    background: rgba(15, 23, 42, 0.035);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .results-table tbody td {
+    vertical-align: middle;
+  }
+  @media (max-width: 767.98px) {
+    .tools-card__header,
+    .tools-card__body {
+      padding: 1.5rem;
+    }
+    .summary-metric__value {
+      font-size: 1.35rem;
+    }
+  }
+</style>
+
+<div class="tools-wrapper">
+  <div class="form-card glass-card">
+    <div class="tools-card__header d-flex flex-column flex-lg-row justify-content-between gap-3">
+      <div>
+        <span class="tools-badge mb-2">Інструменти</span>
+        <h1 class="form-card__title mb-2">Аналіз робочих годин</h1>
+        <p class="form-card__subtitle mb-0">
+          Оберіть агента та діапазон дат, щоб розрахувати фактичний обсяг годин у розкладі.
+        </p>
+      </div>
+    </div>
+    <div class="tools-card__body">
+      <form method="get" class="row g-3 align-items-end">
+        {{ form.non_field_errors }}
+        <div class="col-md-4">
+          {{ form.agent|as_crispy_field }}
+        </div>
+        <div class="col-sm-6 col-md-4">
+          {{ form.start|as_crispy_field }}
+        </div>
+        <div class="col-sm-6 col-md-4">
+          {{ form.end|as_crispy_field }}
+        </div>
+        <div class="col-12 col-md-auto">
+          <button type="submit" class="btn btn-accent w-100">Розрахувати</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {% if summary %}
+    <div class="tools-card__summary tools-summary">
+      <div class="summary-metric">
+        <span class="summary-metric__label">Агент</span>
+        <span class="summary-metric__value">{{ summary.agent.user.get_full_name|default:summary.agent.user.username }}</span>
+        <span class="text-muted small">{{ summary.start|date:"d.m.Y H:i" }} — {{ summary.end|date:"d.m.Y H:i" }}</span>
+      </div>
+      <div class="d-grid d-md-flex gap-3">
+        <div class="summary-metric flex-fill">
+          <span class="summary-metric__label">Всього годин</span>
+          <span class="summary-metric__value">{{ summary.total_hours }}</span>
+        </div>
+        <div class="summary-metric flex-fill">
+          <span class="summary-metric__label">Кількість змін</span>
+          <span class="summary-metric__value">{{ summary.total_shifts }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="results-table-wrapper">
+      {% if shift_rows %}
+        <div class="table-responsive">
+          <table class="table table-modern results-table mb-0">
+            <thead>
+              <tr>
+                <th scope="col">Дата</th>
+                <th scope="col">Години</th>
+                <th scope="col">Напрямок</th>
+                <th scope="col">Статус</th>
+                <th scope="col">Активність</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in shift_rows %}
+                <tr>
+                  <td>
+                    <div class="fw-semibold">{{ row.start|date:"d.m.Y" }}</div>
+                    <div class="text-muted small">
+                      {{ row.start|date:"H:i" }} – {{ row.end|date:"H:i" }}
+                      {% if row.full_start != row.start or row.full_end != row.end %}
+                        <span class="text-muted">
+                          ({{ row.full_start|date:"d.m H:i" }}–{{ row.full_end|date:"d.m H:i" }})
+                        </span>
+                      {% endif %}
+                    </div>
+                  </td>
+                  <td class="fw-semibold">{{ row.duration_hours }} год</td>
+                  <td>{{ row.direction }}</td>
+                  <td>{{ row.status }}</td>
+                  <td>{{ row.activity|default:"—" }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="p-4 text-center text-muted">
+          За вибраний період змін не знайдено.
+        </div>
+      {% endif %}
+    </div>
+  {% elif form.is_bound %}
+    <div class="results-table-wrapper">
+      <div class="p-4 text-center text-muted">
+        За вказаними параметрами нічого не знайдено. Спробуйте змінити діапазон дат.
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
