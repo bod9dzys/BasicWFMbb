@@ -57,6 +57,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'core.middleware.LoginRequiredMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 
@@ -132,8 +133,23 @@ USE_TZ = True
 STATIC_URL = 'static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 
-LOGIN_URL = "/admin/login/"
+LOGIN_URL = "/accounts/login/"
 LOGIN_REDIRECT_URL = "/schedule/"
+LOGOUT_REDIRECT_URL = "/accounts/login/"
+LOGIN_EXEMPT_URLS = [
+    "/accounts/login/",
+    "/accounts/signup/",
+    "/accounts/logout/",
+    "/admin/login/",
+    "/admin/logout/",
+]
+LOGIN_EXEMPT_URL_NAMES = [
+    "login",
+    "signup",
+]
+LOGIN_EXEMPT_PREFIXES = [
+    "/static/",
+]
 
 
 # Default primary key field type

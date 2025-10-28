@@ -2,13 +2,14 @@
 from datetime import timedelta, datetime
 from django.utils import timezone
 from django.shortcuts import render, redirect
+from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required, permission_required
 from django.db import transaction
 
 from django.http import JsonResponse
 from .models import Shift, ShiftExchange, Agent, ShiftStatus
 from .filters import ShiftFilter
-from .forms import ExchangeCreateForm
+from .forms import ExchangeCreateForm, SignUpForm
 from django.contrib import messages
 from .services import can_swap
 
@@ -44,6 +45,21 @@ def _format_shift_label(shift: Shift, agent) -> str:
 
     end_part = f"{end_local:%H:%M}"
     return f"{agent} · {start_local:%d.%m %H:%M}–{end_part}"
+
+
+def signup(request):
+    if request.user.is_authenticated:
+        return redirect("schedule_week")
+
+    form = SignUpForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        user = form.save()
+        login(request, user)
+        messages.success(request, "Обліковий запис створено. Ласкаво просимо!")
+        return redirect("schedule_week")
+
+    return render(request, "registration/signup.html", {"form": form})
+
 
 @login_required
 def schedule_week(request):

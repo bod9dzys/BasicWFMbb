@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}Реєстрація{% endblock %}
+
+{% block content %}
+<style>
+  .auth-wrapper {
+    max-width: 520px;
+    margin: 0 auto;
+  }
+  .auth-card__header {
+    padding: 2rem 2.25rem 1rem;
+  }
+  .auth-card__body {
+    padding: 0 2.25rem 2.25rem;
+  }
+  @media (max-width: 575.98px) {
+    .auth-card__header,
+    .auth-card__body {
+      padding-left: 1.5rem;
+      padding-right: 1.5rem;
+    }
+  }
+</style>
+
+<div class="auth-wrapper">
+  <form method="post" class="form-card glass-card">
+    <div class="auth-card__header">
+      <h1 class="form-card__title mb-2">Створення акаунта</h1>
+      <p class="form-card__subtitle">
+        Заповніть дані нижче, щоб отримати доступ до розкладу.
+      </p>
+    </div>
+    <div class="auth-card__body">
+      {% csrf_token %}
+      {{ form.non_field_errors }}
+      <div class="row g-3">
+        <div class="col-sm-6">
+          {{ form.username|as_crispy_field }}
+        </div>
+        <div class="col-sm-6">
+          {{ form.email|as_crispy_field }}
+        </div>
+        <div class="col-sm-6">
+          {{ form.first_name|as_crispy_field }}
+        </div>
+        <div class="col-sm-6">
+          {{ form.last_name|as_crispy_field }}
+        </div>
+        <div class="col-sm-6">
+          {{ form.password1|as_crispy_field }}
+        </div>
+        <div class="col-sm-6">
+          {{ form.password2|as_crispy_field }}
+        </div>
+      </div>
+      <button type="submit" class="btn btn-accent w-100 mt-3">Створити акаунт</button>
+      <p class="text-center mt-3 mb-0 text-muted">
+        Вже маєте акаунт?
+        <a href="{% url 'login' %}">Увійти</a>
+      </p>
+    </div>
+  </form>
+</div>
+{% endblock %}

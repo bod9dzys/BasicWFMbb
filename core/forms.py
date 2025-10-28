@@ -1,5 +1,7 @@
 # core/forms.py
 from django import forms
+from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth.models import User
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Submit, Field, Layout
 from .models import Shift, Agent
@@ -172,3 +174,23 @@ class ExchangeCreateForm(forms.Form):
         if shift_pk:
             qs = qs | base_queryset.filter(pk=shift_pk)
         return qs.distinct()
+
+
+class SignUpForm(UserCreationForm):
+    first_name = forms.CharField(label="Ім'я", max_length=150, required=False)
+    last_name = forms.CharField(label="Прізвище", max_length=150, required=False)
+    email = forms.EmailField(label="Email", required=True)
+
+    class Meta:
+        model = User
+        fields = ("username", "first_name", "last_name", "email", "password1", "password2")
+
+    def save(self, commit=True):
+        user = super().save(commit=False)
+        user.first_name = self.cleaned_data.get("first_name", "")
+        user.last_name = self.cleaned_data.get("last_name", "")
+        user.email = self.cleaned_data["email"]
+        if commit:
+            user.save()
+            Agent.objects.get_or_create(user=user)
+        return user

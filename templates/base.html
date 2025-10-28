@@ -356,13 +356,22 @@
   <body class="bg-light">
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
       <div class="container">
-        <a class="navbar-brand" href="{% url 'schedule_week' %}">Schedule</a> {# Змінив # на url 'schedule_week' для кращої навігації #}
+        <a class="navbar-brand" href="{% if user.is_authenticated %}{% url 'schedule_week' %}{% else %}{% url 'login' %}{% endif %}">Schedule</a>
 
-        {# --- ДОДАНО ЦЕЙ БЛОК --- #}
-        <div class="ms-auto"> {# ms-auto вирівнює елемент праворуч #}
-          <a href="{% url 'admin:index' %}" class="btn btn-sm admin-btn">Admin</a> {# Використовуємо url 'admin:index' #}
+        <div class="ms-auto d-flex align-items-center gap-2">
+          {% if user.is_authenticated %}
+            <span class="text-light small fw-semibold d-none d-md-inline">
+              {{ user.get_full_name|default:user.username }}
+            </span>
+            {% if user.is_staff %}
+              <a href="{% url 'admin:index' %}" class="btn btn-sm admin-btn">Admin</a>
+            {% endif %}
+            <a href="{% url 'logout' %}" class="btn btn-outline-light btn-sm">Вийти</a>
+          {% else %}
+            <a href="{% url 'login' %}" class="btn btn-soft btn-sm">Увійти</a>
+            <a href="{% url 'signup' %}" class="btn btn-accent btn-sm">Реєстрація</a>
+          {% endif %}
         </div>
-        {# --- КІНЕЦЬ ДОДАНОГО БЛОКУ --- #}
 
       </div>
     </nav>
@@ -539,6 +548,38 @@
                   hours: date.getHours(),
                   minutes: date.getMinutes(),
                 };
+              },
+              onClose: function (_selectedDates, _dateStr, instance) {
+                const inputEl = instance.altInput || instance.input;
+                if (inputEl) {
+                  const raw = inputEl.value.trim();
+                  if (raw) {
+                    const format = instance.altInput
+                      ? instance.config.altFormat
+                      : instance.config.dateFormat;
+                    const parsed = instance.parseDate(raw, format);
+                    if (parsed) {
+                      const existing = instance.selectedDates[0];
+                      if (!existing || existing.getTime() !== parsed.getTime()) {
+                        instance.setDate(parsed, false, format);
+                      }
+                    }
+                  }
+                }
+                const current = instance.selectedDates[0];
+                if (current) {
+                  instance._lastTime = {
+                    hours: current.getHours(),
+                    minutes: current.getMinutes(),
+                  };
+                  instance._lastDateKey = current.toDateString();
+                } else {
+                  instance._lastTime = {
+                    hours: instance.config.defaultHour || 0,
+                    minutes: instance.config.defaultMinute || 0,
+                  };
+                  instance._lastDateKey = null;
+                }
               },
             });
           });
