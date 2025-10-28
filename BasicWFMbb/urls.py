@@ -23,13 +23,14 @@ from core.views import (
     exchange_create,
     get_agent_shifts_for_month,
     signup,
+    logout_view,
 )
 
 
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("accounts/login/", auth_views.LoginView.as_view(template_name="registration/login.html", redirect_authenticated_user=True), name="login"),
-    path("accounts/logout/", auth_views.LogoutView.as_view(), name="logout"),
+    path("accounts/logout/", logout_view, name="logout"),
     path("accounts/signup/", signup, name="signup"),
 
     path("", schedule_week, name="home"),

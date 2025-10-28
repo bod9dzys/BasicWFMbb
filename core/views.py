@@ -2,7 +2,7 @@
 from datetime import timedelta, datetime
 from django.utils import timezone
 from django.shortcuts import render, redirect
-from django.contrib.auth import login
+from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required, permission_required
 from django.db import transaction
 
@@ -59,6 +59,13 @@ def signup(request):
         return redirect("schedule_week")
 
     return render(request, "registration/signup.html", {"form": form})
+
+
+@login_required
+def logout_view(request):
+    logout(request)
+    messages.info(request, "Ви вийшли з акаунта.")
+    return redirect("login")
 
 
 @login_required

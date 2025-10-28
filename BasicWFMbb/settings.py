@@ -139,13 +139,13 @@ LOGOUT_REDIRECT_URL = "/accounts/login/"
 LOGIN_EXEMPT_URLS = [
     "/accounts/login/",
     "/accounts/signup/",
-    "/accounts/logout/",
     "/admin/login/",
     "/admin/logout/",
 ]
 LOGIN_EXEMPT_URL_NAMES = [
     "login",
     "signup",
+    "logout",
 ]
 LOGIN_EXEMPT_PREFIXES = [
     "/static/",
