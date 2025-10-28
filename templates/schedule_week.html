@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}Розклад — Тиждень{% endblock %}
+
+{% block content %}
+
+<!-- ШАПКА: навігація тижнями + дропдаун з прокруткою -->
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+  <div class="btn-group" role="group" aria-label="Навігація тижнями">
+    <a class="btn btn-outline-secondary" href="{% url 'schedule_week' %}?week={{ prev_week }}">‹ Попередній</a>
+
+    <!-- Дропдаун тижнів року -->
+    <div class="dropdown">
+      <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+        Всі тижні {{ week_start|date:"Y" }}
+      </button>
+      <div id="weeksDropdown" class="dropdown-menu p-0" style="max-height: 320px; overflow: auto; min-width: 320px;">
+        <!-- показуємо всі, але за рахунок max-height бачимо ~5–10 і крутимо колесиком -->
+        {% for w in weeks %}
+          <a class="dropdown-item {% if forloop.counter0 == active_week_idx %}active{% endif %}"
+             href="{% url 'schedule_week' %}?week={{ w.param }}">
+            {{ w.label }}
+          </a>
+        {% endfor %}
+      </div>
+    </div>
+
+    <a class="btn btn-outline-secondary" href="{% url 'schedule_week' %}?week={{ next_week }}">Наступний ›</a>
+  </div>
+
+  <h2 class="h5 mb-0">
+    {{ week_start|date:"d.m.Y" }} — {{ days.6|date:"d.m.Y" }}
+  </h2>
+
+  <a href="{% url 'exchange_create' %}" class="btn btn-primary">Обмін змінами</a>
+</div>
+
+<!-- КНОПКА ДЛЯ КОЛАПСУ ФІЛЬТРІВ -->
+<div class="mb-2 d-flex justify-content-end">
+  <button class="btn btn-sm btn-outline-dark" type="button" data-bs-toggle="collapse" data-bs-target="#filtersCollapse" aria-expanded="false" aria-controls="filtersCollapse">
+    Фільтри
+  </button>
+</div>
+
+<!-- ФІЛЬТРИ У COLAPSE, ЩО НЕ ЗАЙМАЮТЬ ПІВЕКРАНА -->
+<div class="collapse" id="filtersCollapse">
+  <div class="card card-body mb-3">
+    <form method="get" class="row g-3 align-items-end">
+      <!-- Зберігаємо вибір тижня в формі -->
+      <div class="col-md-3">
+        <label class="form-label">Тиждень від</label>
+        <input type="date" name="week" class="form-control" value="{{ request.GET.week|default:week_start|date:'Y-m-d' }}">
+      </div>
+
+      <!-- самі фільтри: рендеримо компактно -->
+      <div class="col-12 col-md-9">
+        <div class="row g-2">
+          {% crispy filter.form %}
+        </div>
+      </div>
+
+      <div class="col-12">
+        <button type="submit" class="btn btn-dark">Застосувати</button>
+        <a href="{% url 'schedule_week' %}?week={{ week_start|date:'Y-m-d' }}" class="btn btn-outline-secondary">Скинути</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Таблиця розкладу (без змін, як робили раніше) -->
+<div class="table-responsive">
+  <table class="table table-sm table-bordered align-middle">
+    <thead class="table-light">
+      <tr>
+        <th style="min-width: 220px;">Агент</th>
+        {% for d in days %}
+          <th class="text-center">
+            <div class="fw-semibold">{{ d|date:"D" }}</div>
+            <div class="text-muted">{{ d|date:"d.m" }}</div>
+          </th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in table %}
+        <tr>
+          <td>
+            <div class="fw-semibold">
+              {{ row.agent.user.get_full_name|default:row.agent.user.username }}
+            </div>
+            <div class="text-muted small">
+              {% if row.agent.team_lead %}TL: {{ row.agent.team_lead.get_full_name|default:row.agent.team_lead.username }}{% endif %}
+            </div>
+          </td>
+          {% for shifts in row.cells %}
+            <td style="min-width: 180px;">
+              {% if shifts %}
+                {% for s in shifts %}
+                  <div class="p-1 mb-1 border rounded">
+                    <div class="d-flex justify-content-between">
+                      <span class="small">{{ s.direction }}</span>
+                      <span class="small">{{ s.start|date:"H:i" }}–{{ s.end|date:"H:i" }}</span>
+                    </div>
+                    <div class="small text-muted">
+                      {{ s.get_status_display }}{% if s.activity %} · {{ s.activity }}{% endif %}
+                    </div>
+                  </div>
+                {% endfor %}
+              {% else %}
+                <div class="text-muted small">—</div>
+              {% endif %}
+            </td>
+          {% endfor %}
+        </tr>
+      {% empty %}
+        <tr>
+          <td colspan="8" class="text-center text-muted">Нічого не знайдено за цими фільтрами.</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Невеликий JS: при відкритті дропдауну прокрутити до активного елемента -->
+<script>
+document.addEventListener('shown.bs.dropdown', function (e) {
+  if (e.target && e.target.nextElementSibling && e.target.nextElementSibling.id === 'weeksDropdown') {
+    const menu = e.target.nextElementSibling;
+    const active = menu.querySelector('.dropdown-item.active');
+    if (active) {
+      const top = active.offsetTop - menu.clientHeight / 2 + active.clientHeight / 2;
+      menu.scrollTop = Math.max(top, 0);
+    }
+  }
+}, true);
+</script>
+
+{% endblock %}

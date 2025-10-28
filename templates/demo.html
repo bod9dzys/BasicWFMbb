@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}Demo{% endblock %}
+
+{% block content %}
+  <div class="card mx-auto" style="max-width: 720px;">
+    <div class="card-body">
+      <form method="post" novalidate>
+        {% csrf_token %}
+        {% crispy form %}  {# саме так, тег, а не {{ form|crispy }} #}
+      </form>
+    </div>
+  </div>
+{% endblock %}

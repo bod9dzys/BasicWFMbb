@@ -1,0 +1,42 @@
+# core/admin.py
+from django.contrib import admin
+from import_export.admin import ImportExportModelAdmin
+from .models import Agent, Shift, ShiftExchange
+
+
+@admin.register(Agent)
+class AgentAdmin(admin.ModelAdmin):
+    list_display = ("user", "team_lead", "active")
+    list_filter = ("active", "team_lead")
+    search_fields = (
+        "user__username",
+        "user__first_name",
+        "user__last_name",
+        "user__email",
+    )
+
+
+@admin.register(Shift)
+class ShiftAdmin(ImportExportModelAdmin):
+    list_display = ("agent", "start", "end", "direction", "status")
+    list_filter = ("direction", "status", "agent__team_lead")
+
+    search_fields = (
+        "agent__user__username",
+        "agent__user__first_name",
+        "agent__user__last_name",
+    )
+    date_hierarchy = "start"
+
+
+@admin.register(ShiftExchange)
+class ShiftExchangeAdmin(admin.ModelAdmin):
+    list_display = ("from_shift", "to_shift", "approved", "created_at", "requested_by")
+    list_filter = ("approved", "created_at")
+    search_fields = (
+        "from_shift__agent__user__username",
+        "to_shift__agent__user__username",
+    )
+
+def _is_in(user, group_name):
+    return user.is_superuser or user.groups.filter(name=group_name).exists()

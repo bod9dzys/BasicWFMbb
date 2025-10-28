@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}Обмін змін{% endblock %}
+
+{% block content %}
+<h2 class="h4 mb-3">Запит на обмін</h2>
+<form method="post" class="card">
+  <div class="card-body">
+    {% csrf_token %}
+    {% crispy form %}
+  </div>
+</form>
+{% endblock %}
