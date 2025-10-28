@@ -37,19 +37,12 @@ def _weeks_of_year(year: int, tz):
 
 
 def _format_shift_label(shift: Shift, agent) -> str:
-    """
-    Build human-readable label for a shift with localised times.
-    Shows end date if it differs from start date.
-    """
+    """Build human-readable label with start date/time and end time."""
     tz = timezone.get_current_timezone()
     start_local = timezone.localtime(shift.start, tz)
     end_local = timezone.localtime(shift.end, tz)
 
-    end_part = (
-        f"{end_local:%d.%m %H:%M}"
-        if start_local.date() != end_local.date()
-        else f"{end_local:%H:%M}"
-    )
+    end_part = f"{end_local:%H:%M}"
     return f"{agent} · {start_local:%d.%m %H:%M}–{end_part}"
 
 @login_required
