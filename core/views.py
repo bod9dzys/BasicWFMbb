@@ -9,9 +9,15 @@ from django.db import transaction
 from django.http import JsonResponse
 from .models import Shift, ShiftExchange, Agent, ShiftStatus
 from .filters import ShiftFilter
-from .forms import ExchangeCreateForm, SignUpForm, ToolsHoursForm
+from .forms import ExchangeCreateForm, SignUpForm, ToolsHoursForm, DashboardFilterForm
 from django.contrib import messages
 from .services import can_swap
+
+NON_WORKING_STATUSES = {
+    ShiftStatus.VACATION,
+    ShiftStatus.SICK,
+    ShiftStatus.DAY_OFF,
+}
 
 def _monday(dt):
     return dt - timedelta(days=dt.weekday())
@@ -151,6 +157,110 @@ def schedule_week(request):
         "active_week_idx": active_idx  # ← нове
     }
     return render(request, "schedule_week.html", ctx)
+
+
+def _prepare_agent_entries(shifts_qs, tz, window=None):
+    entries = {}
+    for shift in shifts_qs:
+        agent_id = shift.agent_id
+        info = entries.setdefault(
+            agent_id,
+            {
+                "agent": shift.agent,
+                "display_name": shift.agent.user.get_full_name() or shift.agent.user.username,
+                "shifts": [],
+            },
+        )
+        if window:
+            overlap_start = max(shift.start, window[0])
+            overlap_end = min(shift.end, window[1])
+        else:
+            overlap_start = shift.start
+            overlap_end = shift.end
+
+        info["shifts"].append(
+            {
+                "start": timezone.localtime(shift.start, tz),
+                "end": timezone.localtime(shift.end, tz),
+                "overlap_start": timezone.localtime(overlap_start, tz),
+                "overlap_end": timezone.localtime(overlap_end, tz),
+                "status_key": shift.status,
+                "status_label": shift.get_status_display(),
+                "direction": shift.get_direction_display(),
+            }
+        )
+
+    ordered = list(entries.values())
+    ordered.sort(
+        key=lambda item: (
+            item["agent"].user.last_name or "",
+            item["agent"].user.first_name or "",
+            item["agent"].user.username,
+        )
+    )
+    for item in ordered:
+        item["shifts"].sort(key=lambda sh: sh["overlap_start"])
+    return ordered
+
+
+@login_required
+def dashboard(request):
+    tz = timezone.get_current_timezone()
+    now = timezone.now()
+
+    current_qs = (
+        Shift.objects.select_related("agent", "agent__user")
+        .filter(start__lte=now, end__gt=now)
+        .exclude(status__in=NON_WORKING_STATUSES)
+        .order_by("agent__user__last_name", "agent__user__first_name", "start")
+    )
+    current_agents = _prepare_agent_entries(current_qs, tz)
+    current_count = len(current_agents)
+
+    form = DashboardFilterForm(request.GET or None)
+    window_summary = None
+    window_agents = []
+
+    if form.is_valid():
+        day = form.cleaned_data["day"]
+        time_start = form.cleaned_data["time_start"]
+        time_end = form.cleaned_data["time_end"]
+
+        window_start = timezone.make_aware(
+            datetime.combine(day, time_start),
+            tz,
+        )
+        window_end = timezone.make_aware(
+            datetime.combine(day, time_end),
+            tz,
+        )
+
+        window_qs = (
+            Shift.objects.select_related("agent", "agent__user")
+            .filter(start__lt=window_end, end__gt=window_start)
+            .exclude(status__in=NON_WORKING_STATUSES)
+            .order_by("agent__user__last_name", "agent__user__first_name", "start")
+        )
+
+        window_agents = _prepare_agent_entries(window_qs, tz, window=(window_start, window_end))
+        window_summary = {
+            "start": timezone.localtime(window_start, tz),
+            "end": timezone.localtime(window_end, tz),
+            "count": len(window_agents),
+        }
+
+    return render(
+        request,
+        "dashboard.html",
+        {
+            "form": form,
+            "current_count": current_count,
+            "current_agents": current_agents,
+            "now_local": timezone.localtime(now, tz),
+            "window_summary": window_summary,
+            "window_agents": window_agents,
+        },
+    )
 
 
 

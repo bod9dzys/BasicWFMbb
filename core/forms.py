@@ -346,3 +346,58 @@ class ToolsHoursForm(forms.Form):
             raise forms.ValidationError("Обраний агент не належить зазначеному тімліду.")
 
         return cleaned
+
+
+class DashboardFilterForm(forms.Form):
+    day = forms.DateField(
+        label="Дата",
+        widget=forms.DateInput(
+            format="%Y-%m-%d",
+            attrs={
+                "class": "form-control",
+                "type": "date",
+            },
+        ),
+    )
+    time_start = forms.TimeField(
+        label="Початок",
+        input_formats=["%H:%M", "%H:%M:%S"],
+        widget=forms.TimeInput(
+            format="%H:%M",
+            attrs={
+                "class": "form-control",
+                "type": "time",
+            },
+        ),
+    )
+    time_end = forms.TimeField(
+        label="Кінець",
+        input_formats=["%H:%M", "%H:%M:%S"],
+        widget=forms.TimeInput(
+            format="%H:%M",
+            attrs={
+                "class": "form-control",
+                "type": "time",
+            },
+        ),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        tz = timezone.get_current_timezone()
+        now = timezone.localtime(timezone.now(), tz)
+        start_default = now.replace(minute=0, second=0, microsecond=0)
+        end_default = (start_default + timedelta(hours=1))
+
+        if not self.is_bound:
+            self.fields["day"].initial = start_default.date()
+            self.fields["time_start"].initial = start_default.time()
+            self.fields["time_end"].initial = end_default.time()
+
+    def clean(self):
+        cleaned = super().clean()
+        start = cleaned.get("time_start")
+        end = cleaned.get("time_end")
+        if start and end and start >= end:
+            raise forms.ValidationError("Час початку має бути раніше за час завершення.")
+        return cleaned

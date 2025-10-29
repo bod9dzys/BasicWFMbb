@@ -26,6 +26,7 @@ from core.views import (
     signup,
     logout_view,
     tools,
+    dashboard,
 )
 
 
@@ -45,6 +46,7 @@ urlpatterns = [
 
     path("", schedule_week, name="home"),
     path("schedule/", schedule_week, name="schedule_week"),
+    path("dashboard/", dashboard, name="dashboard"),
     path("tools/", tools, name="tools"),
     path("exchange/", exchange_create, name="exchange_create"),
     path("ajax/get-agent-shifts/", get_agent_shifts_for_month, name="ajax_get_agent_shifts"),

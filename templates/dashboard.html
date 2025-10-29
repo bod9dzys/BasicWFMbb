@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+
+{% block title %}Дашборд{% endblock %}
+
+{% block content %}
+<style>
+  .dashboard-wrapper {
+    display: grid;
+    gap: 1.75rem;
+  }
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1.5rem;
+  }
+  .metric-card {
+    padding: 2rem;
+    border-radius: 1.25rem;
+    background: rgba(76, 201, 240, 0.12);
+    border: 1px solid rgba(76, 201, 240, 0.22);
+    box-shadow: 0 18px 36px rgba(15, 23, 42, 0.12);
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+  }
+  .metric-card__label {
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(15, 23, 42, 0.6);
+  }
+  .metric-card__value {
+    font-size: 2.8rem;
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1;
+  }
+  .metric-card__meta {
+    color: rgba(15, 23, 42, 0.68);
+    font-size: 0.9rem;
+  }
+  .filter-card {
+    padding: 2rem;
+  }
+  .agents-list {
+    border-radius: 1.2rem;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.1);
+  }
+  .agents-list__header {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+    font-weight: 600;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+  }
+  .agents-list__body {
+    padding: 0.25rem 1.5rem 1.5rem;
+  }
+  .agent-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 0.85rem 0;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+    gap: 1rem;
+  }
+  .agent-item:last-child {
+    border-bottom: none;
+  }
+  .agent-item__name {
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .agent-item__shift {
+    font-size: 0.88rem;
+    color: var(--text-secondary);
+  }
+  .agent-item__badge {
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(15, 23, 42, 0.65);
+    background: rgba(76, 201, 240, 0.18);
+    border: 1px solid rgba(76, 201, 240, 0.22);
+    border-radius: 999px;
+    padding: 0.2rem 0.75rem;
+    white-space: nowrap;
+  }
+  @media (max-width: 575.98px) {
+    .metric-card {
+      padding: 1.5rem;
+    }
+    .metric-card__value {
+      font-size: 2.2rem;
+    }
+    .filter-card {
+      padding: 1.5rem;
+    }
+    .agents-list__body {
+      padding-inline: 1rem;
+    }
+  }
+</style>
+
+<div class="dashboard-wrapper">
+  <div class="dashboard-grid">
+    <div class="metric-card">
+      <span class="metric-card__label">Агенти на зміні прямо зараз</span>
+      <span class="metric-card__value">{{ current_count }}</span>
+      <span class="metric-card__meta">Станом на {{ now_local|date:"d.m.Y H:i" }}</span>
+    </div>
+
+    <div class="card glass-card filter-card">
+      <h2 class="h5 mb-3 fw-semibold">Перевірити інший слот</h2>
+      <form method="get" class="row g-3 align-items-end">
+        <div class="col-sm-6 col-lg-4">
+          {{ form.day.label_tag }}
+          {{ form.day }}
+          {% if form.day.errors %}
+            <div class="text-danger small mt-1">{{ form.day.errors.0 }}</div>
+          {% endif %}
+        </div>
+        <div class="col-sm-6 col-lg-4">
+          {{ form.time_start.label_tag }}
+          {{ form.time_start }}
+          {% if form.time_start.errors %}
+            <div class="text-danger small mt-1">{{ form.time_start.errors.0 }}</div>
+          {% endif %}
+        </div>
+        <div class="col-sm-6 col-lg-4">
+          {{ form.time_end.label_tag }}
+          {{ form.time_end }}
+          {% if form.time_end.errors %}
+            <div class="text-danger small mt-1">{{ form.time_end.errors.0 }}</div>
+          {% endif %}
+        </div>
+        {% if form.non_field_errors %}
+          <div class="col-12">
+            <div class="alert alert-danger mb-0 py-2">
+              {{ form.non_field_errors.0 }}
+            </div>
+          </div>
+        {% endif %}
+        <div class="col-12 col-sm-auto">
+          <button type="submit" class="btn btn-accent w-100">Показати</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="agents-list">
+    <div class="agents-list__header">
+      <span>Зараз працюють</span>
+      <span class="badge bg-light text-dark">{{ current_count }}</span>
+    </div>
+    <div class="agents-list__body">
+      {% if current_agents %}
+        {% for item in current_agents %}
+          <div class="agent-item">
+            <div>
+              <div class="agent-item__name">{{ item.display_name }}</div>
+              {% for shift in item.shifts %}
+                <div class="agent-item__shift">
+                  {{ shift.start|date:"d.m H:i" }} – {{ shift.end|date:"H:i" }}
+                  · {{ shift.direction }}
+                  {% if shift.status_key != 'work' %}
+                    · {{ shift.status_label }}
+                  {% endif %}
+                </div>
+              {% endfor %}
+            </div>
+            <span class="agent-item__badge">На зміні</span>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="text-center text-muted py-4">Наразі жоден агент не працює.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if window_summary %}
+    <div class="agents-list">
+      <div class="agents-list__header">
+        <span>
+          {{ window_summary.start|date:"d.m.Y H:i" }} – {{ window_summary.end|date:"H:i" }}
+        </span>
+        <span class="badge bg-light text-dark">{{ window_summary.count }}</span>
+      </div>
+      <div class="agents-list__body">
+        {% if window_agents %}
+          {% for item in window_agents %}
+            <div class="agent-item">
+              <div>
+                <div class="agent-item__name">{{ item.display_name }}</div>
+                {% for shift in item.shifts %}
+                  <div class="agent-item__shift">
+                    {{ shift.overlap_start|date:"d.m H:i" }} – {{ shift.overlap_end|date:"H:i" }}
+                    · {{ shift.direction }}
+                    {% if shift.status_key != 'work' %}
+                      · {{ shift.status_label }}
+                    {% endif %}
+                  </div>
+                {% endfor %}
+              </div>
+              <span class="agent-item__badge">У слоті</span>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="text-center text-muted py-4">
+            За цим інтервалом немає активних змін.
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -393,6 +393,10 @@
 
         {% if user.is_authenticated %}
           <div class="d-none d-sm-flex align-items-center ms-4 gap-2">
+            <a href="{% url 'dashboard' %}"
+               class="nav-item-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
+              Дашборд
+            </a>
             <a href="{% url 'schedule_week' %}"
                class="nav-item-link {% if request.resolver_match.url_name == 'schedule_week' %}active{% endif %}">
               Розклад
@@ -406,6 +410,10 @@
             <a href="{% url 'schedule_week' %}"
                class="btn btn-soft btn-sm {% if request.resolver_match.url_name == 'schedule_week' %}active{% endif %}">
               Розклад
+            </a>
+            <a href="{% url 'dashboard' %}"
+               class="btn btn-soft btn-sm {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
+              Дашборд
             </a>
             <a href="{% url 'tools' %}"
                class="btn btn-soft btn-sm {% if request.resolver_match.url_name == 'tools' %}active{% endif %}">
