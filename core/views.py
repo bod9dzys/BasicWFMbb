@@ -244,6 +244,7 @@ def dashboard(request):
         .order_by("agent__user__last_name", "agent__user__first_name", "start")
     )
     current_direction_counts = _direction_counts(current_base_qs)
+    current_direction_total = sum(item["count"] for item in current_direction_counts)
     if direction_filter:
         current_qs = current_base_qs.filter(direction=direction_filter)
     else:
@@ -255,6 +256,7 @@ def dashboard(request):
     window_summary = None
     window_agents = []
     window_direction_counts = []
+    window_direction_total = 0
 
     if form.is_valid():
         day = form.cleaned_data["day"]
@@ -278,6 +280,7 @@ def dashboard(request):
         )
 
         window_direction_counts = _direction_counts(window_base_qs)
+        window_direction_total = sum(item["count"] for item in window_direction_counts)
 
         if direction_filter:
             window_qs = window_base_qs.filter(direction=direction_filter)
@@ -303,6 +306,8 @@ def dashboard(request):
             "window_agents": window_agents,
             "current_direction_counts": current_direction_counts,
             "window_direction_counts": window_direction_counts,
+            "current_direction_total": current_direction_total,
+            "window_direction_total": window_direction_total,
             "selected_direction": direction_filter,
             "selected_direction_label": DIRECTION_LABELS.get(direction_filter) if direction_filter else None,
         },
