@@ -415,7 +415,6 @@
         {% endif %}
 
         <div class="ms-auto d-flex align-items-center gap-3">
-          <span class="developer-tag d-none d-sm-inline">Developed by Bohdan Dzys</span>
           {% if user.is_authenticated %}
             <span class="text-light small fw-semibold d-none d-md-inline">
               {{ user.get_full_name|default:user.username }}
