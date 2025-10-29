@@ -1,5 +1,8 @@
 # core/views.py
 from datetime import timedelta, datetime
+from collections import defaultdict
+from dataclasses import dataclass
+from typing import Optional
 from io import BytesIO
 from django.utils import timezone
 from django.shortcuts import render, redirect
@@ -21,6 +24,18 @@ NON_WORKING_STATUSES = {
 }
 DIRECTION_LABELS = dict(Direction.choices)
 VALID_DIRECTIONS = set(DIRECTION_LABELS.keys())
+
+
+@dataclass(slots=True)
+class ShiftCard:
+    status: str
+    status_label: str
+    direction: str
+    direction_label: str
+    time_label: str
+    activity: Optional[str]
+    comment: Optional[str]
+
 
 def _monday(dt):
     return dt - timedelta(days=dt.weekday())
@@ -92,11 +107,7 @@ def schedule_week(request):
     week_end = week_start + timedelta(days=7)
 
     # 3) Базовий queryset змін за тиждень
-    qs = (
-        Shift.objects
-        .select_related("agent", "agent__user")
-        .filter(start__gte=week_start, start__lt=week_end)
-    )
+    qs = Shift.objects.filter(start__gte=week_start, start__lt=week_end)
 
     # 4) Підключаємо фільтри (TL, агент, статуси тощо)
     f = ShiftFilter(request.GET, queryset=qs)
@@ -104,35 +115,56 @@ def schedule_week(request):
     # 5) Список дат тижня для заголовків колонок
     days = [week_start + timedelta(days=i) for i in range(7)]
 
-    # 6) Півот: рядок = агент, колонки 0..6 = список змін у той день
-    #    Спочатку зберемо впорядкований список агентів, яких торкається вибірка
-    agents_order = []
-    seen = set()
-    for s in f.qs.order_by("agent__user__last_name", "agent__user__first_name", "start"):
-        if s.agent_id not in seen:
-            seen.add(s.agent_id)
-            agents_order.append(s.agent)
+    # 6) Готуємо компактне подання змін у розрізі агентів та днів тижня
+    filtered_qs = f.qs
+    raw_shifts = list(
+        filtered_qs.values(
+            "agent_id",
+            "start",
+            "end",
+            "status",
+            "direction",
+            "activity",
+            "comment",
+        ).order_by("agent_id", "start")
+    )
 
-    # 7) Табличні дані: [{ "agent": Agent, "cells": [list[Shift], ... x7] }, ...]
+    agent_ids = {row["agent_id"] for row in raw_shifts}
+    agents = list(
+        Agent.objects.filter(id__in=agent_ids)
+        .select_related("user", "team_lead")
+        .order_by("user__last_name", "user__first_name", "user__username")
+    )
+
+    shifts_by_agent = defaultdict(list)
+    for row in raw_shifts:
+        shifts_by_agent[row["agent_id"]].append(row)
+
+    status_labels = dict(ShiftStatus.choices)
+    direction_labels = dict(Direction.choices)
+
     table = []
-    # Готуємо порожні клітинки
-    empty_row = {i: [] for i in range(7)}
-    # Індекс зміни в межах тижня
-    def day_idx(dttm):
-        # normalize to local time so overnight UTC timestamps land in the correct day column
-        local_date = timezone.localtime(dttm, tz).date()
-        return (local_date - week_start.date()).days
-
-    # Заповнюємо клітинки
-    grid = {a.id: {i: [] for i in range(7)} for a in agents_order}
-    for s in f.qs.order_by("start"):
-        idx = day_idx(s.start)
-        if 0 <= idx < 7:
-            grid[s.agent_id][idx].append(s)
-
-    for a in agents_order:
-        cells = [grid[a.id][i] for i in range(7)]
-        table.append({"agent": a, "cells": cells})
+    for agent in agents:
+        cells = [[] for _ in range(7)]
+        for entry in shifts_by_agent.get(agent.id, ()):
+            local_start = timezone.localtime(entry["start"], tz)
+            idx = (local_start.date() - week_start.date()).days
+            if 0 <= idx < 7:
+                local_end = timezone.localtime(entry["end"], tz)
+                cells[idx].append(
+                    ShiftCard(
+                        status=entry["status"],
+                        status_label=status_labels.get(entry["status"], entry["status"]),
+                        direction=entry["direction"],
+                        direction_label=direction_labels.get(
+                            entry["direction"], entry["direction"]
+                        ),
+                        time_label=f"{local_start:%H:%M}–{local_end:%H:%M}",
+                        activity=entry["activity"] or None,
+                        comment=entry["comment"] or None,
+                    )
+                )
+        table.append({"agent": agent, "cells": cells})
 
     # 8) Посилання “попередній/наступний тиждень”
     prev_week = (week_start - timedelta(days=7)).date().isoformat()

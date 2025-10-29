@@ -316,12 +316,12 @@
                       {% for s in shifts %}
                         {% if s.status == 'sick' or s.status == 'vacation' or s.status == 'day_off' %}
                           <div class="shift-card shift-card--status">
-                            {{ s.get_status_display }}{% if s.activity %} · {{ s.activity }}{% endif %}{% if s.comment %} · {{ s.comment }}{% endif %}
-                        </div>
+                            {{ s.status_label }}{% if s.activity %} · {{ s.activity }}{% endif %}{% if s.comment %} · {{ s.comment }}{% endif %}
+                          </div>
                         {% elif s.status == 'work' %}
                           <div class="shift-card shift-card--work">
-                            <span class="shift-card__direction">{{ s.get_direction_display }}</span>
-                            <span class="shift-card__time">{{ s.start|date:"H:i" }}–{{ s.end|date:"H:i" }}</span>
+                            <span class="shift-card__direction">{{ s.direction_label }}</span>
+                            <span class="shift-card__time">{{ s.time_label }}</span>
                             {% if s.activity or s.comment %}
                               <span class="shift-card__meta">
                                 {% if s.activity %}{{ s.activity }}{% endif %}{% if s.activity and s.comment %} · {% endif %}{% if s.comment %}{{ s.comment }}{% endif %}
@@ -330,8 +330,8 @@
                           </div>
                         {% elif s.status == 'mentor' %}
                           <div class="shift-card shift-card--other">
-                            <span class="shift-card__direction">{{ s.get_status_display }}</span>
-                            <span class="shift-card__time">{{ s.start|date:"H:i" }}–{{ s.end|date:"H:i" }}</span>
+                            <span class="shift-card__direction">{{ s.status_label }}</span>
+                            <span class="shift-card__time">{{ s.time_label }}</span>
                             {% if s.activity or s.comment %}
                               <span class="shift-card__meta">
                                 {% if s.activity %}{{ s.activity }}{% endif %}{% if s.activity and s.comment %} · {% endif %}{% if s.comment %}{{ s.comment }}{% endif %}
@@ -340,10 +340,10 @@
                           </div>
                         {% else %}
                           <div class="shift-card shift-card--other">
-                            <span class="shift-card__direction">{{ s.get_direction_display }}</span>
-                            <span class="shift-card__time">{{ s.start|date:"H:i" }}–{{ s.end|date:"H:i" }}</span>
+                            <span class="shift-card__direction">{{ s.direction_label }}</span>
+                            <span class="shift-card__time">{{ s.time_label }}</span>
                             <span class="shift-card__meta">
-                              {{ s.get_status_display }}{% if s.activity %} · {{ s.activity }}{% endif %}{% if s.comment %} · {{ s.comment }}{% endif %}
+                              {{ s.status_label }}{% if s.activity %} · {{ s.activity }}{% endif %}{% if s.comment %} · {{ s.comment }}{% endif %}
                             </span>
                           </div>
                         {% endif %}
