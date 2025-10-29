@@ -497,7 +497,7 @@ def tools(request):
             "form": form,
             "summary": summary,
             "shift_rows": shift_rows,
-            "agent_summaries": agent_summaries,
+            "agent_summaries": agent_summaries if summary else [],
         },
     )
 

@@ -71,8 +71,20 @@
   .results-table tbody td {
     vertical-align: middle;
   }
-.tools-card__body .ts-wrapper {
-    width: 100%;
+  /* Refined tool buttons: balanced size, aligned with inputs */
+  .btn-tool {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.65rem 1.15rem;
+    font-size: 1rem;
+    font-weight: 600;
+    border-radius: 0.9rem;
+    line-height: 1.2;
+    min-height: 56px; /* match selects height for alignment */
+  }
+  @media (max-width: 575.98px) {
+    .btn-tool { flex: 1 1 100%; }
   }
   .tools-card__body .ts-control {
     min-height: 56px;
@@ -125,26 +137,26 @@
       </div>
     </div>
     <div class="tools-card__body">
-      <form method="get" class="row g-3 align-items-end">
+      <form method="get" class="row g-3">
         {{ form.non_field_errors }}
-        <div class="col-sm-6 col-md-6 col-lg-3">
+        <div class="col-sm-6 col-md-4">
           {{ form.team_lead|as_crispy_field }}
         </div>
-        <div class="col-sm-6 col-md-6 col-lg-3">
+        <div class="col-sm-6 col-md-4">
           {{ form.agent|as_crispy_field }}
         </div>
-        <div class="col-sm-6 col-md-6 col-lg-3">
+        <div class="col-sm-6 col-md-4">
           {{ form.direction|as_crispy_field }}
         </div>
-        <div class="col-sm-6 col-md-6 col-lg-3">
+        <div class="col-12 col-md-6 col-lg-4">
           {{ form.start|as_crispy_field }}
         </div>
-        <div class="col-sm-6 col-md-6 col-lg-3">
+        <div class="col-12 col-md-6 col-lg-4">
           {{ form.end|as_crispy_field }}
         </div>
-        <div class="col-12 col-md-auto d-flex flex-wrap gap-2">
-          <button type="submit" class="btn btn-accent">Розрахувати</button>
-          <button type="submit" class="btn btn-soft" name="export" value="1">Експорт XLSX</button>
+        <div class="col-12 col-md-12 col-lg-4 d-flex flex-wrap align-items-end justify-content-start justify-content-lg-end gap-2">
+          <button type="submit" class="btn btn-accent btn-tool">Розрахувати</button>
+          <button type="submit" class="btn btn-soft btn-tool" name="export" value="1">Експорт XLSX</button>
         </div>
       </form>
     </div>
@@ -188,7 +200,7 @@
     {% if summary.total_agents|default:0 == 0 %}
       <div class="results-table-wrapper">
         <div class="p-4 text-center text-muted">
-          За обраними параметрами не знайдено жодного агента.
+          За обраними параметрами не ��найдено жодного агента.
         </div>
       </div>
     {% endif %}
