@@ -104,35 +104,31 @@ def schedule_week(request):
     # 5) Список дат тижня для заголовків колонок
     days = [week_start + timedelta(days=i) for i in range(7)]
 
-    # 6) Півот: рядок = агент, колонки 0..6 = список змін у той день
-    #    Спочатку зберемо впорядкований список агентів, яких торкається вибірка
-    agents_order = []
-    seen = set()
-    for s in f.qs.order_by("agent__user__last_name", "agent__user__first_name", "start"):
-        if s.agent_id not in seen:
-            seen.add(s.agent_id)
-            agents_order.append(s.agent)
-
-    # 7) Табличні дані: [{ "agent": Agent, "cells": [list[Shift], ... x7] }, ...]
-    table = []
-    # Готуємо порожні клітинки
-    empty_row = {i: [] for i in range(7)}
-    # Індекс зміни в межах тижня
+    # 6) Таблиця: кожен рядок — агент, кожна клітинка — список змін агента в день тижня
     def day_idx(dttm):
         # normalize to local time so overnight UTC timestamps land in the correct day column
         local_date = timezone.localtime(dttm, tz).date()
         return (local_date - week_start.date()).days
-
-    # Заповнюємо клітинки
-    grid = {a.id: {i: [] for i in range(7)} for a in agents_order}
-    for s in f.qs.order_by("start"):
-        idx = day_idx(s.start)
+    ordered_shifts = (
+        f.qs.select_related("agent", "agent__user")
+        .order_by(
+            "agent__user__last_name",
+            "agent__user__first_name",
+            "agent__user__username",
+            "start",
+        )
+    )
+    table = []
+    current_agent_id = None
+    current_row = None
+    for shift in ordered_shifts:
+        if shift.agent_id != current_agent_id:
+            current_agent_id = shift.agent_id
+            current_row = {"agent": shift.agent, "cells": [[] for _ in range(7)]}
+            table.append(current_row)
+        idx = day_idx(shift.start)
         if 0 <= idx < 7:
-            grid[s.agent_id][idx].append(s)
-
-    for a in agents_order:
-        cells = [grid[a.id][i] for i in range(7)]
-        table.append({"agent": a, "cells": cells})
+            current_row["cells"][idx].append(shift)
 
     # 8) Посилання “попередній/наступний тиждень”
     prev_week = (week_start - timedelta(days=7)).date().isoformat()
