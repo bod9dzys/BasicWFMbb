@@ -1,5 +1,5 @@
 # core/forms.py
-from datetime import timedelta
+from datetime import timedelta, datetime
 
 from django import forms
 from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
@@ -368,14 +368,20 @@ class DashboardFilterForm(forms.Form):
             },
         ),
     )
-    time_start = forms.TimeField(
+    _TIME_CHOICES = [
+        (f"{hour:02d}:{minute:02d}", f"{hour:02d}:{minute:02d}")
+        for hour in range(0, 24)
+        for minute in (0, 30)
+    ]
+
+    time_start = forms.TypedChoiceField(
         label="Початок",
-        input_formats=["%H:%M", "%H:%M:%S"],
-        widget=forms.TimeInput(
-            format="%H:%M",
+        choices=_TIME_CHOICES,
+        coerce=lambda value: datetime.strptime(value, "%H:%M").time(),
+        widget=forms.Select(
             attrs={
-                "class": "form-control",
-                "type": "time",
+                "class": "form-select",
+                "data-placeholder": "Оберіть час початку",
             },
         ),
     )
@@ -385,14 +391,14 @@ class DashboardFilterForm(forms.Form):
         choices=[],
         widget=forms.HiddenInput(),
     )
-    time_end = forms.TimeField(
+    time_end = forms.TypedChoiceField(
         label="Кінець",
-        input_formats=["%H:%M", "%H:%M:%S"],
-        widget=forms.TimeInput(
-            format="%H:%M",
+        choices=_TIME_CHOICES,
+        coerce=lambda value: datetime.strptime(value, "%H:%M").time(),
+        widget=forms.Select(
             attrs={
-                "class": "form-control",
-                "type": "time",
+                "class": "form-select",
+                "data-placeholder": "Оберіть час завершення",
             },
         ),
     )
@@ -406,8 +412,8 @@ class DashboardFilterForm(forms.Form):
 
         if not self.is_bound:
             self.fields["day"].initial = start_default.date()
-            self.fields["time_start"].initial = start_default.time()
-            self.fields["time_end"].initial = end_default.time()
+            self.fields["time_start"].initial = start_default.strftime("%H:%M")
+            self.fields["time_end"].initial = end_default.strftime("%H:%M")
 
         self.fields["direction"].choices = [("", "Усі напрямки")] + list(Direction.choices)
 
