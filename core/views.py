@@ -86,8 +86,7 @@ def schedule_week(request):
     qs = (
         Shift.objects
         .select_related("agent", "agent__user")
-        .filter(start__gte=week_start, end__lt=week_end)
-
+        .filter(start__gte=week_start, start__lt=week_end)
     )
 
     # 4) Підключаємо фільтри (TL, агент, статуси тощо)
