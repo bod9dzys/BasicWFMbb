@@ -80,6 +80,8 @@ class ShiftFilter(django_filters.FilterSet):
             .distinct()
         )
         self.filters["team_lead"].field.queryset = User.objects.filter(id__in=list(tls_ids))
+        tl_field = self.filters["team_lead"].field
+        tl_field.label_from_instance = lambda user: user.get_full_name() or user.username
 
         helper = getattr(self.form, "helper", None) or FormHelper(self.form)
         helper.form_tag = False  # форму-обгортку малюємо вручну в шаблоні
