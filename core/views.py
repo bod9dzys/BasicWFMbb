@@ -388,6 +388,7 @@ def tools(request):
         agent_list = list(agent_queryset.order_by("user__last_name", "user__first_name"))
         total_seconds_all = 0
         total_shifts_all = 0
+        processed_agents = []
 
         EXCLUDED_STATUSES = {
             ShiftStatus.VACATION,
@@ -396,13 +397,16 @@ def tools(request):
         }
 
         for ag in agent_list:
-            shifts = (
+            shifts_qs = (
                 Shift.objects.select_related("agent", "agent__user")
                 .filter(agent=ag, start__lt=end, end__gt=start)
             )
             if selected_directions:
-                shifts = shifts.filter(direction__in=selected_directions)
-            shifts = shifts.order_by("start")
+                shifts_qs = shifts_qs.filter(direction__in=selected_directions)
+            shifts = list(shifts_qs.order_by("start"))
+
+            if selected_directions and not shifts:
+                continue
 
             agent_seconds = 0
             agent_shift_rows = []
@@ -437,6 +441,7 @@ def tools(request):
             total_seconds_all += agent_seconds
             total_shifts_all += counted_shifts
 
+            processed_agents.append(ag)
             agent_summaries.append({
                 "agent": ag,
                 "total_hours": round(agent_seconds / 3600, 2),
@@ -444,10 +449,10 @@ def tools(request):
                 "display_name": ag.user.get_full_name() or ag.user.username,
             })
 
-            if len(agent_list) == 1:
+            if len(processed_agents) == 1:
                 shift_rows = agent_shift_rows
 
-        single_agent = agent_list[0] if len(agent_list) == 1 else None
+        single_agent = processed_agents[0] if len(processed_agents) == 1 else None
 
         summary = {
             "team_lead": team_lead,
@@ -456,7 +461,7 @@ def tools(request):
             "end": timezone.localtime(end, tz),
             "total_hours": round(total_seconds_all / 3600, 2),
             "total_shifts": total_shifts_all,
-            "total_agents": len(agent_list),
+            "total_agents": len(processed_agents),
             "directions": [DIRECTION_LABELS.get(code, code) for code in selected_directions],
         }
 
