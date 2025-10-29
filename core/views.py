@@ -7,7 +7,7 @@ from django.contrib.auth.decorators import login_required, permission_required
 from django.db import transaction
 
 from django.http import JsonResponse
-from .models import Shift, ShiftExchange, Agent, ShiftStatus
+from .models import Shift, ShiftExchange, Agent, ShiftStatus, Direction
 from .filters import ShiftFilter
 from .forms import ExchangeCreateForm, SignUpForm, ToolsHoursForm, DashboardFilterForm
 from django.contrib import messages
@@ -18,6 +18,8 @@ NON_WORKING_STATUSES = {
     ShiftStatus.SICK,
     ShiftStatus.DAY_OFF,
 }
+DIRECTION_LABELS = dict(Direction.choices)
+VALID_DIRECTIONS = set(DIRECTION_LABELS.keys())
 
 def _monday(dt):
     return dt - timedelta(days=dt.weekday())
@@ -203,23 +205,56 @@ def _prepare_agent_entries(shifts_qs, tz, window=None):
     return ordered
 
 
+def _direction_counts(qs):
+    buckets = {key: set() for key in VALID_DIRECTIONS}
+    for direction, agent_id in qs.values_list("direction", "agent_id"):
+        if direction not in buckets:
+            buckets[direction] = set()
+        buckets[direction].add(agent_id)
+    summary = [
+        {
+            "direction": key,
+            "label": DIRECTION_LABELS.get(key, key),
+            "count": len(agent_ids),
+        }
+        for key, agent_ids in buckets.items()
+    ]
+    summary.sort(key=lambda item: item["label"])
+    return summary
+
+
 @login_required
 def dashboard(request):
     tz = timezone.get_current_timezone()
     now = timezone.now()
 
-    current_qs = (
+    form = DashboardFilterForm(request.GET or None)
+    direction_filter = None
+    if form.is_valid():
+        direction_filter = form.cleaned_data.get("direction") or None
+    elif form.is_bound:
+        raw_direction = form.data.get("direction") or ""
+        if raw_direction in VALID_DIRECTIONS:
+            direction_filter = raw_direction
+
+    current_base_qs = (
         Shift.objects.select_related("agent", "agent__user")
         .filter(start__lte=now, end__gt=now)
         .exclude(status__in=NON_WORKING_STATUSES)
         .order_by("agent__user__last_name", "agent__user__first_name", "start")
     )
+    current_direction_counts = _direction_counts(current_base_qs)
+    if direction_filter:
+        current_qs = current_base_qs.filter(direction=direction_filter)
+    else:
+        current_qs = current_base_qs
+
     current_agents = _prepare_agent_entries(current_qs, tz)
     current_count = len(current_agents)
 
-    form = DashboardFilterForm(request.GET or None)
     window_summary = None
     window_agents = []
+    window_direction_counts = []
 
     if form.is_valid():
         day = form.cleaned_data["day"]
@@ -235,12 +270,19 @@ def dashboard(request):
             tz,
         )
 
-        window_qs = (
+        window_base_qs = (
             Shift.objects.select_related("agent", "agent__user")
             .filter(start__lt=window_end, end__gt=window_start)
             .exclude(status__in=NON_WORKING_STATUSES)
             .order_by("agent__user__last_name", "agent__user__first_name", "start")
         )
+
+        window_direction_counts = _direction_counts(window_base_qs)
+
+        if direction_filter:
+            window_qs = window_base_qs.filter(direction=direction_filter)
+        else:
+            window_qs = window_base_qs
 
         window_agents = _prepare_agent_entries(window_qs, tz, window=(window_start, window_end))
         window_summary = {
@@ -259,6 +301,10 @@ def dashboard(request):
             "now_local": timezone.localtime(now, tz),
             "window_summary": window_summary,
             "window_agents": window_agents,
+            "current_direction_counts": current_direction_counts,
+            "window_direction_counts": window_direction_counts,
+            "selected_direction": direction_filter,
+            "selected_direction_label": DIRECTION_LABELS.get(direction_filter) if direction_filter else None,
         },
     )
 

@@ -393,13 +393,13 @@
 
         {% if user.is_authenticated %}
           <div class="d-none d-sm-flex align-items-center ms-4 gap-2">
-            <a href="{% url 'dashboard' %}"
-               class="nav-item-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
-              Дашборд
-            </a>
             <a href="{% url 'schedule_week' %}"
                class="nav-item-link {% if request.resolver_match.url_name == 'schedule_week' %}active{% endif %}">
               Розклад
+            </a>
+            <a href="{% url 'dashboard' %}"
+               class="nav-item-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
+              Дашборд
             </a>
             <a href="{% url 'tools' %}"
                class="nav-item-link {% if request.resolver_match.url_name == 'tools' %}active{% endif %}">
@@ -562,6 +562,18 @@
           const locale =
             (flatpickr.l10ns && flatpickr.l10ns.uk) ||
             (flatpickr.l10ns && flatpickr.l10ns.default);
+          document.querySelectorAll(".date-picker").forEach((input) => {
+            if (input._flatpickr) {
+              return;
+            }
+            flatpickr(input, {
+              dateFormat: "Y-m-d",
+              altInput: true,
+              altFormat: "d.m.Y",
+              locale,
+              disableMobile: true,
+            });
+          });
           document.querySelectorAll(".datetime-picker").forEach((input) => {
             if (input._flatpickr) {
               return;

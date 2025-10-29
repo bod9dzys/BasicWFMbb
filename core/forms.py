@@ -7,7 +7,7 @@ from django.contrib.auth.models import User
 from django.utils import timezone
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Submit, Field, Layout
-from .models import Shift, Agent
+from .models import Shift, Agent, Direction
 
 
 class ExchangeCreateForm(forms.Form):
@@ -354,8 +354,8 @@ class DashboardFilterForm(forms.Form):
         widget=forms.DateInput(
             format="%Y-%m-%d",
             attrs={
-                "class": "form-control",
-                "type": "date",
+                "class": "form-control date-picker",
+                "placeholder": "Оберіть дату",
             },
         ),
     )
@@ -368,6 +368,17 @@ class DashboardFilterForm(forms.Form):
                 "class": "form-control",
                 "type": "time",
             },
+        ),
+    )
+    direction = forms.ChoiceField(
+        label="Напрямок",
+        required=False,
+        choices=[],
+        widget=forms.Select(
+            attrs={
+                "class": "form-select",
+                "data-placeholder": "Усі напрямки",
+            }
         ),
     )
     time_end = forms.TimeField(
@@ -393,6 +404,8 @@ class DashboardFilterForm(forms.Form):
             self.fields["day"].initial = start_default.date()
             self.fields["time_start"].initial = start_default.time()
             self.fields["time_end"].initial = end_default.time()
+
+        self.fields["direction"].choices = [("", "Усі напрямки")] + list(Direction.choices)
 
     def clean(self):
         cleaned = super().clean()

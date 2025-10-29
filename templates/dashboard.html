@@ -42,6 +42,46 @@
   .filter-card {
     padding: 2rem;
   }
+  .direction-card {
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .direction-card__title {
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin-bottom: 0;
+  }
+  .direction-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+  }
+  .direction-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.45rem 0.85rem;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.16);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    color: var(--text-primary);
+    font-weight: 500;
+    font-size: 0.82rem;
+    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  }
+  .direction-chip__count {
+    font-weight: 600;
+  }
+  .direction-chip.active {
+    background: rgba(72, 149, 239, 0.18);
+    border-color: rgba(72, 149, 239, 0.35);
+    color: #0f172a;
+  }
+  .direction-chip.zero {
+    opacity: 0.55;
+  }
   .agents-list {
     border-radius: 1.2rem;
     border: 1px solid rgba(148, 163, 184, 0.2);
@@ -103,6 +143,9 @@
     .agents-list__body {
       padding-inline: 1rem;
     }
+    .direction-card {
+      padding: 1.5rem;
+    }
   }
 </style>
 
@@ -117,25 +160,32 @@
     <div class="card glass-card filter-card">
       <h2 class="h5 mb-3 fw-semibold">Перевірити інший слот</h2>
       <form method="get" class="row g-3 align-items-end">
-        <div class="col-sm-6 col-lg-4">
+        <div class="col-sm-6 col-lg-3">
           {{ form.day.label_tag }}
           {{ form.day }}
           {% if form.day.errors %}
             <div class="text-danger small mt-1">{{ form.day.errors.0 }}</div>
           {% endif %}
         </div>
-        <div class="col-sm-6 col-lg-4">
+        <div class="col-sm-6 col-lg-3">
           {{ form.time_start.label_tag }}
           {{ form.time_start }}
           {% if form.time_start.errors %}
             <div class="text-danger small mt-1">{{ form.time_start.errors.0 }}</div>
           {% endif %}
         </div>
-        <div class="col-sm-6 col-lg-4">
+        <div class="col-sm-6 col-lg-3">
           {{ form.time_end.label_tag }}
           {{ form.time_end }}
           {% if form.time_end.errors %}
             <div class="text-danger small mt-1">{{ form.time_end.errors.0 }}</div>
+          {% endif %}
+        </div>
+        <div class="col-sm-6 col-lg-3">
+          {{ form.direction.label_tag }}
+          {{ form.direction }}
+          {% if form.direction.errors %}
+            <div class="text-danger small mt-1">{{ form.direction.errors.0 }}</div>
           {% endif %}
         </div>
         {% if form.non_field_errors %}
@@ -150,11 +200,35 @@
         </div>
       </form>
     </div>
+
+    <div class="card glass-card direction-card">
+      <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
+        <p class="direction-card__title mb-0">Напрямки зараз</p>
+        {% if selected_direction_label %}
+          <span class="text-muted small">Фільтр: {{ selected_direction_label }}</span>
+        {% else %}
+          <span class="text-muted small">Усі напрямки</span>
+        {% endif %}
+      </div>
+      <div class="direction-chips">
+        {% for item in current_direction_counts %}
+          <span class="direction-chip {% if selected_direction == item.direction %}active{% endif %}{% if item.count == 0 %} zero{% endif %}">
+            <span>{{ item.label }}</span>
+            <span class="direction-chip__count">{{ item.count }}</span>
+          </span>
+        {% endfor %}
+      </div>
+    </div>
   </div>
 
   <div class="agents-list">
     <div class="agents-list__header">
-      <span>Зараз працюють</span>
+      <div class="d-flex flex-column">
+        <span>Зараз працюють</span>
+        {% if selected_direction_label %}
+          <span class="text-muted small">Фільтр: {{ selected_direction_label }}</span>
+        {% endif %}
+      </div>
       <span class="badge bg-light text-dark">{{ current_count }}</span>
     </div>
     <div class="agents-list__body">
@@ -185,12 +259,27 @@
   {% if window_summary %}
     <div class="agents-list">
       <div class="agents-list__header">
-        <span>
-          {{ window_summary.start|date:"d.m.Y H:i" }} – {{ window_summary.end|date:"H:i" }}
-        </span>
+        <div class="d-flex flex-column">
+          <span>
+            {{ window_summary.start|date:"d.m.Y H:i" }} – {{ window_summary.end|date:"H:i" }}
+          </span>
+          {% if selected_direction_label %}
+            <span class="text-muted small">Фільтр: {{ selected_direction_label }}</span>
+          {% endif %}
+        </div>
         <span class="badge bg-light text-dark">{{ window_summary.count }}</span>
       </div>
       <div class="agents-list__body">
+        {% if window_direction_counts %}
+          <div class="direction-chips mb-3">
+            {% for item in window_direction_counts %}
+              <span class="direction-chip {% if selected_direction == item.direction %}active{% endif %}{% if item.count == 0 %} zero{% endif %}">
+                <span>{{ item.label }}</span>
+                <span class="direction-chip__count">{{ item.count }}</span>
+              </span>
+            {% endfor %}
+          </div>
+        {% endif %}
         {% if window_agents %}
           {% for item in window_agents %}
             <div class="agent-item">
