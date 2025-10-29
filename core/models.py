@@ -18,6 +18,7 @@ class ShiftStatus(models.TextChoices):
     TRAINING = "training", "Тренінг"
     MEETING = "meeting", "Мітинг"
     ONBOARD = "onboard", "Онборд"
+    MENTOR = "mentor", "Менторство"
 
 
 class Direction(models.TextChoices):

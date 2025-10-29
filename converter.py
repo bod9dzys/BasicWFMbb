@@ -34,11 +34,18 @@ STATUS_MAP = {
     "OFF": "day_off",
     "вихідний": "day_off",
     "Лікарняний": "sick",
+    "Mentor": "mentor",
+    "MENTOR": "mentor",
+    "mentor": "mentor",
+    "Ментор": "mentor",
+    "Менторство": "mentor",
+    "ментор": "mentor",
+    "менторство": "mentor",
     # додай інші за потреби
 }
 
 # Спеціальні текстові мітки для статусу/активності
-SPECIAL_ACTIVITY_MAP = {}
+SPECIAL_ACTIVITY_MAP = {"ментор": ("mentor", "Ментор"),}
 
 # Назви колонок - ДОДАНО 'team_lead'
 HEADERS = ["id", "agent", "team_lead", "start", "end", "direction", "status", "activity", "comment"]

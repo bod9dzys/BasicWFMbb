@@ -16,9 +16,9 @@ def can_swap(sh1: Shift, sh2: Shift, user) -> Tuple[bool, str]:
         return False, "Скіли не збігаються та різні напрямки."
 
     # Заборонені статуси для обміну
-    non_work = {"vacation", "sick", "day_off"}
+    non_work = {"vacation", "sick", "day_off", "mentor"}
     if sh1.status in non_work or sh2.status in non_work:
-        return False, "Не можна міняти на відпустку/лікарняний/вихідний."
+        return False, "Не можна міняти на відпустку/лікарняний/вихідний/менторство."
 
     # Перетин часу? Дозволено, але попереджай у майбутньому
     return True, ""
