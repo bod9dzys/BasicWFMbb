@@ -261,6 +261,17 @@ class ToolsHoursForm(forms.Form):
         required=False,
         empty_label="Усі агенти",
     )
+    direction = forms.MultipleChoiceField(
+        label="Напрямки",
+        required=False,
+        choices=[],
+        widget=forms.SelectMultiple(
+            attrs={
+                "class": "form-select",
+                "data-placeholder": "Усі напрямки",
+            }
+        ),
+    )
     start = forms.DateTimeField(
         label="Початок періоду",
         widget=forms.DateTimeInput(
@@ -323,6 +334,8 @@ class ToolsHoursForm(forms.Form):
 
         self.fields["agent"].queryset = agent_qs
 
+        self.fields["direction"].choices = Direction.choices
+
         now = timezone.now()
         start_default = (now - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
         end_default = now.replace(second=0, microsecond=0)
@@ -333,15 +346,11 @@ class ToolsHoursForm(forms.Form):
         cleaned = super().clean()
         start = cleaned.get("start")
         end = cleaned.get("end")
-        team_lead = cleaned.get("team_lead")
-        agent = cleaned.get("agent")
-
         if start and end and start > end:
             raise forms.ValidationError("Початок періоду не може бути пізніше завершення.")
 
-        if not team_lead and not agent:
-            raise forms.ValidationError("Оберіть хоча б тімліда або конкретного агента.")
-
+        team_lead = cleaned.get("team_lead")
+        agent = cleaned.get("agent")
         if agent and team_lead and agent.team_lead_id and agent.team_lead_id != team_lead.id:
             raise forms.ValidationError("Обраний агент не належить зазначеному тімліду.")
 
@@ -371,15 +380,10 @@ class DashboardFilterForm(forms.Form):
         ),
     )
     direction = forms.ChoiceField(
-        label="Напрямок",
+        label="",
         required=False,
         choices=[],
-        widget=forms.Select(
-            attrs={
-                "class": "form-select",
-                "data-placeholder": "Усі напрямки",
-            }
-        ),
+        widget=forms.HiddenInput(),
     )
     time_end = forms.TimeField(
         label="Кінець",

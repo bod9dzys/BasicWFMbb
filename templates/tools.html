@@ -120,7 +120,7 @@
         <span class="tools-badge mb-2">Інструменти</span>
         <h1 class="form-card__title mb-2">Аналіз робочих годин</h1>
         <p class="form-card__subtitle mb-0">
-          Оберіть тімліда та/або конкретного агента, щоб розрахувати фактичний обсяг годин за обраний період.
+          Оберіть період та за потреби відфільтруйте за тімлідом, конкретним агентом або напрямком, щоб побачити відпрацьовані години.
         </p>
       </div>
     </div>
@@ -134,13 +134,17 @@
           {{ form.agent|as_crispy_field }}
         </div>
         <div class="col-sm-6 col-md-6 col-lg-3">
+          {{ form.direction|as_crispy_field }}
+        </div>
+        <div class="col-sm-6 col-md-6 col-lg-3">
           {{ form.start|as_crispy_field }}
         </div>
         <div class="col-sm-6 col-md-6 col-lg-3">
           {{ form.end|as_crispy_field }}
         </div>
-        <div class="col-12 col-md-auto">
-          <button type="submit" class="btn btn-accent w-100">Розрахувати</button>
+        <div class="col-12 col-md-auto d-flex flex-wrap gap-2">
+          <button type="submit" class="btn btn-accent">Розрахувати</button>
+          <button type="submit" class="btn btn-soft" name="export" value="1">Експорт XLSX</button>
         </div>
       </form>
     </div>
@@ -162,6 +166,9 @@
           {% endif %}
         </span>
         <span class="text-muted small">{{ summary.start|date:"d.m.Y H:i" }} — {{ summary.end|date:"d.m.Y H:i" }}</span>
+        {% if summary.directions %}
+          <span class="text-muted small">Напрямки: {{ summary.directions|join:", " }}</span>
+        {% endif %}
         {% if summary.total_agents and summary.total_agents > 1 %}
           <span class="text-muted small">Агентів: {{ summary.total_agents }}</span>
         {% endif %}

@@ -201,13 +201,7 @@
             <div class="text-danger small mt-1">{{ form.time_end.errors.0 }}</div>
           {% endif %}
         </div>
-        <div class="col-sm-6 col-lg-3">
-          {{ form.direction.label_tag }}
-          {{ form.direction }}
-          {% if form.direction.errors %}
-            <div class="text-danger small mt-1">{{ form.direction.errors.0 }}</div>
-          {% endif %}
-        </div>
+        {{ form.direction }}
         {% if form.non_field_errors %}
           <div class="col-12">
             <div class="alert alert-danger mb-0 py-2">

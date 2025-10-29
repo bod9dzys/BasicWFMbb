@@ -1,12 +1,13 @@
 # core/views.py
 from datetime import timedelta, datetime
+from io import BytesIO
 from django.utils import timezone
 from django.shortcuts import render, redirect
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required, permission_required
 from django.db import transaction
 
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from .models import Shift, ShiftExchange, Agent, ShiftStatus, Direction
 from .filters import ShiftFilter
 from .forms import ExchangeCreateForm, SignUpForm, ToolsHoursForm, DashboardFilterForm
@@ -244,7 +245,6 @@ def dashboard(request):
         .order_by("agent__user__last_name", "agent__user__first_name", "start")
     )
     current_direction_counts = _direction_counts(current_base_qs)
-    current_direction_total = sum(item["count"] for item in current_direction_counts)
     if direction_filter:
         current_qs = current_base_qs.filter(direction=direction_filter)
     else:
@@ -252,6 +252,7 @@ def dashboard(request):
 
     current_agents = _prepare_agent_entries(current_qs, tz)
     current_count = len(current_agents)
+    current_direction_total = current_count
 
     window_summary = None
     window_agents = []
@@ -280,7 +281,6 @@ def dashboard(request):
         )
 
         window_direction_counts = _direction_counts(window_base_qs)
-        window_direction_total = sum(item["count"] for item in window_direction_counts)
 
         if direction_filter:
             window_qs = window_base_qs.filter(direction=direction_filter)
@@ -293,6 +293,7 @@ def dashboard(request):
             "end": timezone.localtime(window_end, tz),
             "count": len(window_agents),
         }
+        window_direction_total = window_summary["count"]
 
     return render(
         request,
@@ -370,6 +371,7 @@ def tools(request):
         team_lead = form.cleaned_data.get("team_lead")
         start = form.cleaned_data["start"]
         end = form.cleaned_data["end"]
+        selected_directions = form.cleaned_data.get("direction") or []
         tz = timezone.get_current_timezone()
 
         if timezone.is_naive(start):
@@ -397,8 +399,10 @@ def tools(request):
             shifts = (
                 Shift.objects.select_related("agent", "agent__user")
                 .filter(agent=ag, start__lt=end, end__gt=start)
-                .order_by("start")
             )
+            if selected_directions:
+                shifts = shifts.filter(direction__in=selected_directions)
+            shifts = shifts.order_by("start")
 
             agent_seconds = 0
             agent_shift_rows = []
@@ -443,9 +447,6 @@ def tools(request):
             if len(agent_list) == 1:
                 shift_rows = agent_shift_rows
 
-        if agent_summaries:
-            agent_summaries.sort(key=lambda item: (-item["total_hours"], item["display_name"]))
-
         single_agent = agent_list[0] if len(agent_list) == 1 else None
 
         summary = {
@@ -456,9 +457,38 @@ def tools(request):
             "total_hours": round(total_seconds_all / 3600, 2),
             "total_shifts": total_shifts_all,
             "total_agents": len(agent_list),
+            "directions": [DIRECTION_LABELS.get(code, code) for code in selected_directions],
         }
 
         shift_rows.sort(key=lambda row: row["start"])
+
+        if summary["total_agents"] > 1 and agent_summaries:
+            agent_summaries.sort(key=lambda item: (-item["total_hours"], item["display_name"]))
+
+        if request.GET.get("export") == "1":
+            try:
+                from openpyxl import Workbook
+            except ImportError:
+                messages.error(request, "Експорт неможливий: пакет openpyxl не встановлено.")
+            else:
+                workbook = Workbook()
+                sheet = workbook.active
+                sheet.title = "Години"
+                sheet.append(["Агент", "Відпрацьовані години", "Період"])
+                period_label = f"{summary['start']:%d.%m.%Y %H:%M} – {summary['end']:%d.%m.%Y %H:%M}"
+                for item in agent_summaries:
+                    sheet.append([item["display_name"], item["total_hours"], period_label])
+
+                buffer = BytesIO()
+                workbook.save(buffer)
+                buffer.seek(0)
+                filename = f"hours_{summary['start']:%Y%m%d_%H%M}-{summary['end']:%Y%m%d_%H%M}.xlsx"
+                response = HttpResponse(
+                    buffer.getvalue(),
+                    content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+                response["Content-Disposition"] = f'attachment; filename=\"{filename}\"'
+                return response
 
     return render(
         request,
