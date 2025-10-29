@@ -111,7 +111,9 @@ def schedule_week(request):
     empty_row = {i: [] for i in range(7)}
     # Індекс зміни в межах тижня
     def day_idx(dttm):
-        return (dttm.date() - week_start.date()).days
+        # normalize to local time so overnight UTC timestamps land in the correct day column
+        local_date = timezone.localtime(dttm, tz).date()
+        return (local_date - week_start.date()).days
 
     # Заповнюємо клітинки
     grid = {a.id: {i: [] for i in range(7)} for a in agents_order}
