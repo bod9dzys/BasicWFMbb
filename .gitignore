@@ -15,10 +15,9 @@ __pycache__/
 
 # Статика (якщо ви її збираєте командою collectstatic)
 # /static/
-october.xlsx
+november.xlsx.xlsx
 import_for_wfm.csv
 import_for_wfm.xlsx
-converter.py
 # (Залиште це закоментованим, поки не знаєте, що робите)
 
 # Файли .env (якщо будете зберігати паролі)
