@@ -301,8 +301,10 @@ class ToolsHoursForm(forms.Form):
             self.fields["team_lead"].empty_label = None
             if not self.is_bound:
                 self.fields["team_lead"].initial = user.pk
-
         self.fields["team_lead"].queryset = team_lead_qs
+        self.fields["team_lead"].label_from_instance = (
+            lambda obj: (obj.get_full_name() or "").strip() or obj.username
+        )
 
         agent_qs = Agent.objects.select_related("user").filter(active=True).order_by(
             "user__last_name", "user__first_name"
