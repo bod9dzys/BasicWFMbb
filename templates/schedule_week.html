@@ -264,7 +264,7 @@
     <div class="card glass-card filters-card mb-4">
       <div class="card-body">
         <form method="get" class="row g-3 align-items-end">
-          <input type="hidden" name="week" value="{{ request.GET.week|default:week_start|date:'Y-m-d' }}">
+          <input type="hidden" name="week" value="{{ request.GET.week|default:week_param }}">
           <div class="col-12">
             <div class="row g-3">
               {% crispy filter.form %}
@@ -272,7 +272,7 @@
           </div>
           <div class="col-12 d-flex flex-wrap gap-2">
             <button type="submit" class="btn btn-accent">Застосувати</button>
-            <a href="{% url 'schedule_week' %}?week={{ week_start|date:'Y-m-d' }}" class="btn btn-soft">Скинути</a>
+            <a href="{% url 'schedule_week' %}?week={{ week_param }}" class="btn btn-soft">Скинути</a>
           </div>
         </form>
       </div>
@@ -321,6 +321,16 @@
                         {% elif s.status == 'work' %}
                           <div class="shift-card shift-card--work">
                             <span class="shift-card__direction">{{ s.get_direction_display }}</span>
+                            <span class="shift-card__time">{{ s.start|date:"H:i" }}–{{ s.end|date:"H:i" }}</span>
+                            {% if s.activity or s.comment %}
+                              <span class="shift-card__meta">
+                                {% if s.activity %}{{ s.activity }}{% endif %}{% if s.activity and s.comment %} · {% endif %}{% if s.comment %}{{ s.comment }}{% endif %}
+                              </span>
+                            {% endif %}
+                          </div>
+                        {% elif s.status == 'mentor' %}
+                          <div class="shift-card shift-card--other">
+                            <span class="shift-card__direction">{{ s.get_status_display }}</span>
                             <span class="shift-card__time">{{ s.start|date:"H:i" }}–{{ s.end|date:"H:i" }}</span>
                             {% if s.activity or s.comment %}
                               <span class="shift-card__meta">

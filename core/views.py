@@ -156,8 +156,9 @@ def schedule_week(request):
         "table": table,
         "prev_week": prev_week,
         "next_week": next_week,
-        "weeks": weeks,  # ← нове
-        "active_week_idx": active_idx  # ← нове
+        "weeks": weeks,
+        "active_week_idx": active_idx,
+        "week_param": active_param,
     }
     return render(request, "schedule_week.html", ctx)
 
