@@ -605,6 +605,18 @@ def _compress_uploaded_file(uploaded_file):
     if hasattr(uploaded_file, "seek"):
         uploaded_file.seek(0)
 
+    # Читаємо вміст файлу один раз
+    try:
+        file_content = uploaded_file.read()
+    except Exception as e:
+        # Можливо, файл вже прочитано або виникла інша помилка
+        # Спробуємо ще раз з seek(0) для безпеки
+        if hasattr(uploaded_file, "seek"):
+            uploaded_file.seek(0)
+            file_content = uploaded_file.read()
+        else:
+            raise e # Якщо seek не допоміг, прокидаємо помилку
+
     temp_file = tempfile.SpooledTemporaryFile(max_size=5 * 1024 * 1024)
     with zipfile.ZipFile(
         temp_file,
@@ -613,13 +625,8 @@ def _compress_uploaded_file(uploaded_file):
         compresslevel=5,
         allowZip64=True,
     ) as archive:
-        with archive.open(original_name, "w") as zip_member:
-            if hasattr(uploaded_file, "chunks"):
-                for chunk in uploaded_file.chunks(chunk_size=64 * 1024):
-                    if chunk:
-                        zip_member.write(chunk)
-            else:
-                shutil.copyfileobj(uploaded_file, zip_member, length=64 * 1024)
+        # Використовуємо writestr для прямого запису байтів
+        archive.writestr(original_name, file_content)
 
     temp_file.seek(0)
     return File(temp_file, name=compressed_name)
