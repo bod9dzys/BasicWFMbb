@@ -88,34 +88,28 @@ class ExchangeCreateForm(forms.Form):
 
     def clean(self):
         cleaned = super().clean()
-        from_agent = cleaned.get("from_agent")
-        to_agent = cleaned.get("to_agent")
-        from_shift_id = self.data.get("from_shift")
-        to_shift_id = self.data.get("to_shift")
+        start = cleaned.get("start")
+        end = cleaned.get("end")
+        if start and end and start > end:
+            raise forms.ValidationError("Дата початку має бути раніше або дорівнювати даті завершення.")
 
-        if from_agent and to_agent and from_agent == to_agent:
-            raise forms.ValidationError("Оберіть двох різних агентів.")
+        attachment = cleaned.get("attachment")
+        attach_later = cleaned.get("attach_later")
 
-        cleaned["from_shift"] = self._ensure_shift_matches_agent(
-            field_name="from_shift",
-            agent=from_agent,
-            shift_id=from_shift_id,
-            mismatch_message="Обрана 'Зміна Агента 1' не належить Агенту 1.",
-        )
-        cleaned["to_shift"] = self._ensure_shift_matches_agent(
-            field_name="to_shift",
-            agent=to_agent,
-            shift_id=to_shift_id,
-            mismatch_message="Обрана 'Зміна Агента 2' не належить Агенту 2.",
-        )
+        if not attachment and not attach_later:
+            raise forms.ValidationError(
+                _("Додайте підтвердження або оберіть «Прикріпити пізніше».")
+            )
 
-        f_shift = cleaned.get("from_shift")
-        t_shift = cleaned.get("to_shift")
-        if f_shift and t_shift and f_shift.pk == t_shift.pk:
-            raise forms.ValidationError("Виберіть дві різні зміни для обміну.")
+        if attachment:
+            max_size_mb = 10
+            if attachment.size > max_size_mb * 1024 * 1024:
+                raise ValidationError(
+                    _("Розмір файлу не може перевищувати %(size)d МБ."),
+                    params={"size": max_size_mb},
+                )
 
         return cleaned
-
     def _resolve_agent_for_from_field(self, user):
         """
         Обмежуємо відправника, якщо він звичайний агент. Повертає PK.

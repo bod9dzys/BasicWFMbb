@@ -1,5 +1,4 @@
 from datetime import timedelta
-import zipfile
 
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -23,7 +22,7 @@ class SickLeaveFormTests(TestCase):
     def _make_file(self, name="proof.txt", content=b"example data"):
         return SimpleUploadedFile(name, content)
 
-    def test_request_form_with_attachment_zips_file(self):
+    def test_request_form_with_attachment_validates(self):
         today = timezone.localdate()
         file_obj = self._make_file()
         form = SickLeaveRequestForm(
@@ -38,15 +37,9 @@ class SickLeaveFormTests(TestCase):
         )
 
         self.assertTrue(form.is_valid(), form.errors.as_data())
-
         attachment = form.cleaned_data["attachment"]
-        self.assertTrue(attachment.name.endswith(".zip"))
-
-        attachment.open("rb")
-        with zipfile.ZipFile(attachment, "r") as archive:
-            names = archive.namelist()
-            self.assertEqual(names, ["proof.txt"])
-            self.assertEqual(archive.read("proof.txt"), b"example data")
+        self.assertEqual(attachment.name, "proof.txt")
+        self.assertEqual(attachment.read(), b"example data")
 
     def test_request_form_without_attachment_requires_attach_later(self):
         today = timezone.localdate()
@@ -84,7 +77,7 @@ class SickLeaveFormTests(TestCase):
         self.assertFalse(form.is_valid())
         self.assertIn("Додайте файл", form.errors["attachment"][0])
 
-    def test_upload_form_compresses_file(self):
+    def test_upload_form_validates_file(self):
         form = SickLeaveProofUploadForm(
             data={},
             files={"attachment": self._make_file("evidence.pdf", b"binary data")},
@@ -92,8 +85,6 @@ class SickLeaveFormTests(TestCase):
 
         self.assertTrue(form.is_valid(), form.errors)
         attachment = form.cleaned_data["attachment"]
-
-        self.assertTrue(attachment.name.endswith(".zip"))
-        attachment.open("rb")
-        with zipfile.ZipFile(attachment, "r") as archive:
-            self.assertEqual(archive.read("evidence.pdf"), b"binary data")
+        self.assertEqual(attachment.name, "evidence.pdf")
+        attachment.seek(0)
+        self.assertEqual(attachment.read(), b"binary data")

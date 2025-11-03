@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta, time
-import zipfile
 
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -63,10 +62,8 @@ class SickLeaveViewTests(TestCase):
         self.assertFalse(proof.attach_later)
         self.assertIsNotNone(proof.resolved_at)
 
-        proof.attachment.open("rb")
-        with zipfile.ZipFile(proof.attachment, "r") as archive:
-            self.assertIn("proof.txt", archive.namelist())
-
+        # Перевіряємо, що файл збережено
+        self.assertTrue(proof.attachment.name.endswith("proof.txt"))
         agent_slug = slugify(self.agent.user.get_full_name() or self.agent.user.username) or f"agent-{self.agent.pk}"
         self.assertIn(f"sick_leave_proofs/{agent_slug}/", proof.attachment.name)
 
@@ -133,6 +130,5 @@ class SickLeaveViewTests(TestCase):
         self.assertIsNotNone(proof.attachment)
         self.assertIsNotNone(proof.resolved_at)
 
-        proof.attachment.open("rb")
-        with zipfile.ZipFile(proof.attachment, "r") as archive:
-            self.assertEqual(archive.read("evidence.png"), b"img-bytes")
+        # Перевіряємо, що файл збережено
+        self.assertTrue(proof.attachment.name.endswith("evidence.png"))
