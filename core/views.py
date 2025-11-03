@@ -435,12 +435,13 @@ def request_sick_leave(request):
                             line.strip()
                             for line in shift.comment.splitlines()
                             if line.strip()
-                            and not line.strip().lower().startswith("[лікарняний")
+                               and not line.strip().lower().startswith("[лікарняний")
                         ]
                         new_comment = "\n".join(cleaned_comment_lines).strip()
                         shift.comment = new_comment or None
                     shift.save()
 
+                # Цей блок тепер всередині transaction.atomic()
                 proof = SickLeaveProof.objects.create(
                     agent=agent,
                     start_date=start_date,
@@ -516,16 +517,18 @@ def upload_sick_leave_proof(request, proof_id):
 
     form = SickLeaveProofUploadForm(request.POST, request.FILES, instance=proof)
     if form.is_valid():
-        proof = form.instance
-        attachment = form.cleaned_data["attachment"]
-        if hasattr(attachment, "seek"):
-            attachment.seek(0)
-        proof.attachment = attachment
+        # form.save(commit=False) оновить attachment на екземплярі proof
+        proof = form.save(commit=False)
+
+        # Тепер встановлюємо додаткові поля
         proof.attach_later = False
         upload_timestamp = timezone.now()
         proof.upload_timestamp = upload_timestamp
         proof.resolved_at = upload_timestamp
+
+        # Зберігаємо всі зміни (включно з файлом)
         proof.save()
+
         messages.success(request, "Підтвердження лікарняного успішно завантажено.")
     else:
         for error in form.errors.get("attachment", []):
