@@ -391,6 +391,12 @@ class DashboardFilterForm(forms.Form):
         choices=[],
         widget=forms.HiddenInput(),
     )
+    window_direction = forms.ChoiceField(
+        label="",
+        required=False,
+        choices=[],
+        widget=forms.HiddenInput(),
+    )
     time_end = forms.TypedChoiceField(
         label="Кінець",
         choices=_TIME_CHOICES,
@@ -415,7 +421,9 @@ class DashboardFilterForm(forms.Form):
             self.fields["time_start"].initial = start_default.strftime("%H:%M")
             self.fields["time_end"].initial = end_default.strftime("%H:%M")
 
-        self.fields["direction"].choices = [("", "Усі напрямки")] + list(Direction.choices)
+        choices = [("", "Усі напрямки")] + list(Direction.choices)
+        self.fields["direction"].choices = choices
+        self.fields["window_direction"].choices = choices
 
     def clean(self):
         cleaned = super().clean()

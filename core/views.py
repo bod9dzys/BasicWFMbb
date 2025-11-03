@@ -263,13 +263,21 @@ def dashboard(request):
     now = timezone.now()
 
     form = DashboardFilterForm(request.GET or None)
-    direction_filter = None
+    current_direction_filter = None
+    window_direction_filter = None
     if form.is_valid():
-        direction_filter = form.cleaned_data.get("direction") or None
+        current_direction_filter = form.cleaned_data.get("direction") or None
+        window_direction_filter = form.cleaned_data.get("window_direction") or None
     elif form.is_bound:
         raw_direction = form.data.get("direction") or ""
         if raw_direction in VALID_DIRECTIONS:
-            direction_filter = raw_direction
+            current_direction_filter = raw_direction
+        raw_window_direction = form.data.get("window_direction") or ""
+        if raw_window_direction in VALID_DIRECTIONS:
+            window_direction_filter = raw_window_direction
+
+    if window_direction_filter is None:
+        window_direction_filter = current_direction_filter
 
     current_base_qs = (
         Shift.objects.select_related("agent", "agent__user")
@@ -278,8 +286,8 @@ def dashboard(request):
         .order_by("agent__user__last_name", "agent__user__first_name", "start")
     )
     current_direction_counts = _direction_counts(current_base_qs)
-    if direction_filter:
-        current_qs = current_base_qs.filter(direction=direction_filter)
+    if current_direction_filter:
+        current_qs = current_base_qs.filter(direction=current_direction_filter)
     else:
         current_qs = current_base_qs
 
@@ -317,8 +325,8 @@ def dashboard(request):
 
         window_direction_counts = _direction_counts(window_base_qs)
 
-        if direction_filter:
-            window_qs = window_base_qs.filter(direction=direction_filter)
+        if window_direction_filter:
+            window_qs = window_base_qs.filter(direction=window_direction_filter)
         else:
             window_qs = window_base_qs
 
@@ -344,10 +352,18 @@ def dashboard(request):
             "window_direction_counts": window_direction_counts,
             "current_direction_total": current_direction_total,
             "window_direction_total": window_direction_total,
-            "selected_direction": direction_filter,
-            "selected_direction_label": DIRECTION_LABELS.get(direction_filter) if direction_filter else None,
+            "selected_direction": current_direction_filter,
+            "selected_direction_label": DIRECTION_LABELS.get(current_direction_filter) if current_direction_filter else None,
+            "selected_window_direction": window_direction_filter,
+            "selected_window_direction_label": DIRECTION_LABELS.get(window_direction_filter) if window_direction_filter else None,
+            "show_window": show_window and window_summary is not None,
         },
     )
+
+
+@login_required
+def requests_view(request):
+    return render(request, "requests.html")
 
 
 

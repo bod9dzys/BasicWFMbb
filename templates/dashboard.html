@@ -23,6 +23,9 @@
     display: flex;
     flex-direction: column;
     gap: 0.65rem;
+    text-decoration: none;
+    color: inherit;
+    cursor: pointer;
   }
   .metric-card__label {
     font-size: 0.78rem;
@@ -171,16 +174,16 @@
 
 <div class="dashboard-wrapper">
   <div class="dashboard-grid">
-    <div class="metric-card">
+    <a href="{% url 'dashboard' %}" class="metric-card">
       <span class="metric-card__label">Агенти на зміні прямо зараз</span>
       <span class="metric-card__value">{{ current_count }}</span>
       <span class="metric-card__meta">Станом на {{ now_local|date:"d.m.Y H:i" }}</span>
-    </div>
+    </a>
 
     <div class="card glass-card filter-card">
       <h2 class="h5 mb-3 fw-semibold">Перевірити інший слот</h2>
       <form method="get" id="dashboard-filter-form" class="row g-3 align-items-end">
-        <input type="hidden" name="show_window" value="">
+        <input type="hidden" name="show_window" value="{% if show_window %}1{% endif %}">
         <div class="col-sm-6 col-lg-3">
           {{ form.day.label_tag }}
           {{ form.day }}
@@ -203,6 +206,7 @@
           {% endif %}
         </div>
         {{ form.direction }}
+        {{ form.window_direction }}
         {% if form.non_field_errors %}
           <div class="col-12">
             <div class="alert alert-danger mb-0 py-2">
@@ -228,14 +232,14 @@
       <div class="direction-chips">
         <button type="button"
                 class="direction-chip {% if not selected_direction %}active{% endif %}{% if current_direction_total == 0 %} zero{% endif %}"
-                data-direction-chip="">
+                data-current-direction="">
           <span>Усі</span>
           <span class="direction-chip__count">{{ current_direction_total|default:0 }}</span>
         </button>
         {% for item in current_direction_counts %}
           <button type="button"
                   class="direction-chip {% if selected_direction == item.direction %}active{% endif %}{% if item.count == 0 %} zero{% endif %}"
-                  data-direction-chip="{{ item.direction }}">
+                  data-current-direction="{{ item.direction }}">
             <span>{{ item.label }}</span>
             <span class="direction-chip__count">{{ item.count }}</span>
           </button>
@@ -260,14 +264,14 @@
           data-collapse-target="#current-agents-body"
           data-text-expanded="Згорнути"
           data-text-collapsed="Розгорнути"
-          aria-expanded="true"
+          aria-expanded="{% if show_window %}false{% else %}true{% endif %}"
           aria-controls="current-agents-body"
         >
-          Згорнути
+          {% if show_window %}Розгорнути{% else %}Згорнути{% endif %}
         </button>
       </div>
     </div>
-    <div class="agents-list__body" id="current-agents-body">
+    <div class="agents-list__body{% if show_window %} d-none{% endif %}" id="current-agents-body">
       {% if current_agents %}
         {% for item in current_agents %}
           <div class="agent-item">
@@ -299,8 +303,8 @@
           <span>
             {{ window_summary.start|date:"d.m.Y H:i" }} – {{ window_summary.end|date:"H:i" }}
           </span>
-          {% if selected_direction_label %}
-            <span class="text-muted small">Фільтр: {{ selected_direction_label }}</span>
+          {% if selected_window_direction_label %}
+            <span class="text-muted small">Фільтр: {{ selected_window_direction_label }}</span>
           {% endif %}
         </div>
         <span class="badge bg-light text-dark">{{ window_summary.count }}</span>
@@ -309,15 +313,15 @@
         {% if window_direction_counts %}
           <div class="direction-chips mb-3">
             <button type="button"
-                    class="direction-chip {% if not selected_direction %}active{% endif %}{% if window_direction_total == 0 %} zero{% endif %}"
-                    data-direction-chip="">
+                    class="direction-chip {% if not selected_window_direction %}active{% endif %}{% if window_direction_total == 0 %} zero{% endif %}"
+                    data-window-direction="">
               <span>Усі</span>
               <span class="direction-chip__count">{{ window_direction_total|default:0 }}</span>
             </button>
             {% for item in window_direction_counts %}
               <button type="button"
-                      class="direction-chip {% if selected_direction == item.direction %}active{% endif %}{% if item.count == 0 %} zero{% endif %}"
-                      data-direction-chip="{{ item.direction }}">
+                      class="direction-chip {% if selected_window_direction == item.direction %}active{% endif %}{% if item.count == 0 %} zero{% endif %}"
+                      data-window-direction="{{ item.direction }}">
                 <span>{{ item.label }}</span>
                 <span class="direction-chip__count">{{ item.count }}</span>
               </button>
@@ -362,6 +366,7 @@
       return;
     }
     const directionSelect = filterForm.querySelector('[name="direction"]');
+    const windowDirectionSelect = filterForm.querySelector('[name="window_direction"]');
     const showWindowField = filterForm.querySelector('[name="show_window"]');
     const showWindowButton = document.getElementById("dashboard-show-window");
     if (showWindowButton) {
@@ -369,12 +374,20 @@
         if (showWindowField) {
           showWindowField.value = "1";
         }
+        if (
+          windowDirectionSelect &&
+          !windowDirectionSelect.value &&
+          directionSelect &&
+          directionSelect.value
+        ) {
+          windowDirectionSelect.value = directionSelect.value;
+        }
         filterForm.submit();
       });
     }
-    document.querySelectorAll("[data-direction-chip]").forEach((chip) => {
+    document.querySelectorAll("[data-current-direction]").forEach((chip) => {
       chip.addEventListener("click", function () {
-        const value = this.getAttribute("data-direction-chip") || "";
+        const value = this.getAttribute("data-current-direction") || "";
         if (directionSelect) {
           if (directionSelect.tomselect) {
             if (value) {
@@ -386,8 +399,18 @@
             directionSelect.value = value;
           }
         }
+        filterForm.submit();
+      });
+    });
+
+    document.querySelectorAll("[data-window-direction]").forEach((chip) => {
+      chip.addEventListener("click", function () {
+        const value = this.getAttribute("data-window-direction") || "";
+        if (windowDirectionSelect) {
+          windowDirectionSelect.value = value;
+        }
         if (showWindowField) {
-          showWindowField.value = "";
+          showWindowField.value = "1";
         }
         filterForm.submit();
       });

@@ -27,6 +27,7 @@ from core.views import (
     logout_view,
     tools,
     dashboard,
+    requests_view,
 )
 
 
@@ -46,6 +47,7 @@ urlpatterns = [
 
     path("", schedule_week, name="home"),
     path("schedule/", schedule_week, name="schedule_week"),
+    path("requests/", requests_view, name="requests"),
     path("dashboard/", dashboard, name="dashboard"),
     path("tools/", tools, name="tools"),
     path("exchange/", exchange_create, name="exchange_create"),
