@@ -932,6 +932,7 @@ def request_sick_leave(request):
                 if attachment:
                     if hasattr(attachment, "seek"):
                         attachment.seek(0)
+
                     upload_timestamp = timezone.now()
                     proof.upload_timestamp = upload_timestamp
                     proof.attachment.save(attachment.name, attachment, save=False)
