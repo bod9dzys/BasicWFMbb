@@ -180,6 +180,7 @@
     <div class="card glass-card filter-card">
       <h2 class="h5 mb-3 fw-semibold">Перевірити інший слот</h2>
       <form method="get" id="dashboard-filter-form" class="row g-3 align-items-end">
+        <input type="hidden" name="show_window" value="">
         <div class="col-sm-6 col-lg-3">
           {{ form.day.label_tag }}
           {{ form.day }}
@@ -210,7 +211,7 @@
           </div>
         {% endif %}
         <div class="col-12 col-sm-auto">
-          <button type="submit" class="btn btn-accent w-100">Показати</button>
+          <button type="button" class="btn btn-accent w-100" id="dashboard-show-window">Показати</button>
         </div>
       </form>
     </div>
@@ -251,9 +252,22 @@
           <span class="text-muted small">Фільтр: {{ selected_direction_label }}</span>
         {% endif %}
       </div>
-      <span class="badge bg-light text-dark">{{ current_count }}</span>
+      <div class="d-flex align-items-center gap-2 flex-wrap justify-content-end">
+        <span class="badge bg-light text-dark">{{ current_count }}</span>
+        <button
+          type="button"
+          class="btn btn-soft btn-sm"
+          data-collapse-target="#current-agents-body"
+          data-text-expanded="Згорнути"
+          data-text-collapsed="Розгорнути"
+          aria-expanded="true"
+          aria-controls="current-agents-body"
+        >
+          Згорнути
+        </button>
+      </div>
     </div>
-    <div class="agents-list__body">
+    <div class="agents-list__body" id="current-agents-body">
       {% if current_agents %}
         {% for item in current_agents %}
           <div class="agent-item">
@@ -348,6 +362,16 @@
       return;
     }
     const directionSelect = filterForm.querySelector('[name="direction"]');
+    const showWindowField = filterForm.querySelector('[name="show_window"]');
+    const showWindowButton = document.getElementById("dashboard-show-window");
+    if (showWindowButton) {
+      showWindowButton.addEventListener("click", function () {
+        if (showWindowField) {
+          showWindowField.value = "1";
+        }
+        filterForm.submit();
+      });
+    }
     document.querySelectorAll("[data-direction-chip]").forEach((chip) => {
       chip.addEventListener("click", function () {
         const value = this.getAttribute("data-direction-chip") || "";
@@ -362,7 +386,30 @@
             directionSelect.value = value;
           }
         }
+        if (showWindowField) {
+          showWindowField.value = "";
+        }
         filterForm.submit();
+      });
+    });
+
+    document.querySelectorAll("[data-collapse-target]").forEach((toggle) => {
+      const targetSelector = toggle.getAttribute("data-collapse-target");
+      if (!targetSelector) {
+        return;
+      }
+      const target = document.querySelector(targetSelector);
+      if (!target) {
+        return;
+      }
+      toggle.addEventListener("click", function () {
+        const isHidden = target.classList.toggle("d-none");
+        const expandedLabel =
+          toggle.getAttribute("data-text-expanded") || toggle.textContent.trim();
+        const collapsedLabel =
+          toggle.getAttribute("data-text-collapsed") || expandedLabel;
+        toggle.textContent = isHidden ? collapsedLabel : expandedLabel;
+        toggle.setAttribute("aria-expanded", String(!isHidden));
       });
     });
   });

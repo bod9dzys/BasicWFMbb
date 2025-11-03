@@ -1,6 +1,7 @@
 # core/models.py
 from django.db import models
 from django.contrib.auth.models import User
+from django.utils import timezone
 from simple_history.models import HistoricalRecords
 
 
@@ -73,7 +74,10 @@ class Shift(models.Model):
             ("export_schedule", "Може експортувати розклад"),
         )
     def __str__(self):
-        return f"{self.agent} | {self.start:%Y-%m-%d %H:%M} → {self.end:%H:%M}"
+        tz = timezone.get_default_timezone()
+        start_local = timezone.localtime(self.start, tz)
+        end_local = timezone.localtime(self.end, tz)
+        return f"{self.agent} | {start_local:%Y-%m-%d %H:%M} → {end_local:%H:%M}"
 
     @property
     def duration_hours(self) -> float:

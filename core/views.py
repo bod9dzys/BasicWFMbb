@@ -63,7 +63,7 @@ def _weeks_of_year(year: int, tz):
 
 def _format_shift_label(shift: Shift, agent) -> str:
     """Build human-readable label with start date/time and end time."""
-    tz = timezone.get_current_timezone()
+    tz = timezone.get_default_timezone()
     start_local = timezone.localtime(shift.start, tz)
     end_local = timezone.localtime(shift.end, tz)
 
@@ -285,14 +285,16 @@ def dashboard(request):
 
     current_agents = _prepare_agent_entries(current_qs, tz)
     current_count = len(current_agents)
-    current_direction_total = current_count
+    current_direction_total = current_base_qs.values("agent_id").distinct().count()
 
     window_summary = None
     window_agents = []
     window_direction_counts = []
     window_direction_total = 0
 
-    if form.is_valid():
+    show_window = request.GET.get("show_window") == "1"
+
+    if form.is_valid() and show_window:
         day = form.cleaned_data["day"]
         time_start = form.cleaned_data["time_start"]
         time_end = form.cleaned_data["time_end"]
@@ -326,7 +328,7 @@ def dashboard(request):
             "end": timezone.localtime(window_end, tz),
             "count": len(window_agents),
         }
-        window_direction_total = window_summary["count"]
+        window_direction_total = window_base_qs.values("agent_id").distinct().count()
 
     return render(
         request,
