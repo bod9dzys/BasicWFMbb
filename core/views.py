@@ -518,16 +518,17 @@ def upload_sick_leave_proof(request, proof_id):
     form = SickLeaveProofUploadForm(request.POST, request.FILES, instance=proof)
     if form.is_valid():
         # form.save(commit=False) оновить attachment на екземплярі proof
-        proof = form.save(commit=False)
+        proof = form.save()
 
-        # Тепер встановлюємо додаткові поля
+        # 2. Оновлюємо решту полів і зберігаємо їх окремо.
         proof.attach_later = False
-        upload_timestamp = timezone.now()
-        proof.upload_timestamp = upload_timestamp
-        proof.resolved_at = upload_timestamp
+        # Переконуємось, що беремо timestamp з об'єкта, якщо він вже є
+        upload_timestamp = getattr(proof, "upload_timestamp", timezone.now())
+        if not proof.resolved_at:
+            proof.resolved_at = upload_timestamp
 
-        # Зберігаємо всі зміни (включно з файлом)
-        proof.save()
+        # Зберігаємо лише ці конкретні поля
+        proof.save(update_fields=["attach_later", "resolved_at"])
 
         messages.success(request, "Підтвердження лікарняного успішно завантажено.")
     else:

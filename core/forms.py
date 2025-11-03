@@ -87,29 +87,32 @@ class ExchangeCreateForm(forms.Form):
         )
 
     def clean(self):
-        cleaned = super().clean()
-        start = cleaned.get("start")
-        end = cleaned.get("end")
-        if start and end and start > end:
-            raise forms.ValidationError("Дата початку має бути раніше або дорівнювати даті завершення.")
+        cleaned_data = super().clean()
+        from_agent = cleaned_data.get("from_agent")
+        to_agent = cleaned_data.get("to_agent")
+        from_shift = cleaned_data.get("from_shift")
+        to_shift = cleaned_data.get("to_shift")
 
-        attachment = cleaned.get("attachment")
-        attach_later = cleaned.get("attach_later")
-
-        if not attachment and not attach_later:
+        if from_agent and to_agent and from_agent == to_agent:
             raise forms.ValidationError(
-                _("Додайте підтвердження або оберіть «Прикріпити пізніше».")
+                "Оберіть двох різних агентів.",
+                code="same_agent",
             )
 
-        if attachment:
-            max_size_mb = 10
-            if attachment.size > max_size_mb * 1024 * 1024:
-                raise ValidationError(
-                    _("Розмір файлу не може перевищувати %(size)d МБ."),
-                    params={"size": max_size_mb},
-                )
+        if from_agent and from_shift and from_shift.agent != from_agent:
+            self.add_error(
+                "from_shift",
+                f"Ця зміна не належить {from_agent}.",
+            )
 
-        return cleaned
+        if to_agent and to_shift and to_shift.agent != to_agent:
+            self.add_error(
+                "to_shift",
+                f"Ця зміна не належить {to_agent}.",
+            )
+
+        return cleaned_data
+
     def _resolve_agent_for_from_field(self, user):
         """
         Обмежуємо відправника, якщо він звичайний агент. Повертає PK.
