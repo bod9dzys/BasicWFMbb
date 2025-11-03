@@ -6,6 +6,12 @@ from django.utils import timezone
 from django.utils.text import slugify
 from django.contrib.auth import get_user_model
 from simple_history.models import HistoricalRecords
+from django.core.serializers.json import DjangoJSONEncoder
+
+try:
+    from django.db.models import JSONField  # Django 3.1+
+except Exception:  # pragma: no cover
+    from django.contrib.postgres.fields import JSONField  # fallback
 
 
 class Skill(models.TextChoices):
@@ -171,3 +177,35 @@ class SickLeaveProof(models.Model):
     @property
     def is_pending(self) -> bool:
         return self.attachment is None
+
+
+class AuditAction(models.TextChoices):
+    CREATE = "create", "Створено"
+    UPDATE = "update", "Оновлено"
+    DELETE = "delete", "Видалено"
+
+
+class AuditLog(models.Model):
+    timestamp = models.DateTimeField(auto_now_add=True, db_index=True)
+    user = models.ForeignKey(get_user_model(), null=True, blank=True, on_delete=models.SET_NULL, related_name="audit_logs")
+
+    app_label = models.CharField(max_length=64)
+    model = models.CharField(max_length=64)
+    object_pk = models.CharField(max_length=64)
+    object_repr = models.CharField(max_length=255)
+
+    action = models.CharField(max_length=16, choices=AuditAction.choices)
+    changes = JSONField(null=True, blank=True, encoder=DjangoJSONEncoder)
+
+    ip_address = models.CharField(max_length=45, blank=True)
+    user_agent = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-timestamp"]
+        indexes = [
+            models.Index(fields=["app_label", "model", "object_pk"]),
+            models.Index(fields=["user", "timestamp"]),
+        ]
+
+    def __str__(self):
+        return f"{self.timestamp:%Y-%m-%d %H:%M:%S} {self.user or 'system'} {self.action} {self.app_label}.{self.model}#{self.object_pk}"

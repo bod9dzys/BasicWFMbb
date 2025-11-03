@@ -1,6 +1,40 @@
 from django.conf import settings
 from django.contrib.auth.views import redirect_to_login
 from django.urls import resolve, Resolver404
+import threading
+
+
+_local = threading.local()
+
+
+def get_current_user():
+    return getattr(_local, "user", None)
+
+
+def get_current_request():
+    return getattr(_local, "request", None)
+
+
+class CurrentUserMiddleware:
+    """
+    Store current request and user in thread-local storage so signals
+    can access who performed a change without passing request around.
+    Place after AuthenticationMiddleware.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        _local.request = request
+        _local.user = getattr(request, "user", None)
+        try:
+            response = self.get_response(request)
+        finally:
+            # Clean up to avoid leaking references in long-running processes
+            _local.request = None
+            _local.user = None
+        return response
 
 
 class LoginRequiredMiddleware:

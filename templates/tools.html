@@ -241,7 +241,7 @@
                   <th scope="col">Години</th>
                   <th scope="col">Напрямок</th>
                   <th scope="col">Статус</th>
-                  <th scope="col">Активність</th>
+                  
                 </tr>
               </thead>
               <tbody>
@@ -266,7 +266,6 @@
                     </td>
                     <td>{{ row.direction }}</td>
                     <td>{{ row.status }}</td>
-                    <td>{{ row.activity|default:"—" }}</td>
                   </tr>
                 {% endfor %}
               </tbody>

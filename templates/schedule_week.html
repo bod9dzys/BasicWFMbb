@@ -161,8 +161,8 @@
   }
   /* Context menu */
   .shift-menu {
-    position: absolute;
-    z-index: 2000;
+    position: fixed;
+    z-index: 20000;
     min-width: 220px;
     background: #fff;
     border: 1px solid rgba(148,163,184,0.25);
@@ -341,7 +341,7 @@
               </td>
 
               {% for shifts in row.cells %}
-                <td class="shift-cell">
+                <td class="shift-cell" data-agent-id="{{ row.agent.id }}" data-day-index="{{ forloop.counter0 }}" data-week-start="{{ week_start|date:'Y-m-d' }}">
                   {% if shifts %}
                     <div class="shift-stack">
                       {% for s in shifts %}
@@ -352,9 +352,8 @@
                                data-direction="{{ s.direction }}"
                                data-start-hm="{{ s.start_hm }}"
                                data-end-hm="{{ s.end_hm }}"
-                               data-activity="{{ s.activity|default_if_none:''|escape }}"
                                data-comment="{{ s.comment|default_if_none:''|escape }}">
-                            {{ s.status_label }}{% if s.activity %} · {{ s.activity }}{% endif %}{% if s.comment %} · {{ s.comment }}{% endif %}
+                            {{ s.status_label }}{% if s.comment %} · {{ s.comment }}{% endif %}
                           </div>
                         {% elif s.status == 'work' %}
                           <div class="shift-card shift-card--work"
@@ -363,15 +362,10 @@
                                data-direction="{{ s.direction }}"
                                data-start-hm="{{ s.start_hm }}"
                                data-end-hm="{{ s.end_hm }}"
-                               data-activity="{{ s.activity|default_if_none:''|escape }}"
                                data-comment="{{ s.comment|default_if_none:''|escape }}">
                             <span class="shift-card__direction">{{ s.direction_label }}</span>
                             <span class="shift-card__time">{{ s.time_label }}</span>
-                            {% if s.activity or s.comment %}
-                              <span class="shift-card__meta">
-                                {% if s.activity %}{{ s.activity }}{% endif %}{% if s.activity and s.comment %} · {% endif %}{% if s.comment %}{{ s.comment }}{% endif %}
-                              </span>
-                            {% endif %}
+                            {% if s.comment %}<span class="shift-card__meta">{{ s.comment }}</span>{% endif %}
                           </div>
                         {% elif s.status == 'mentor' %}
                           <div class="shift-card shift-card--other"
@@ -380,15 +374,22 @@
                                data-direction="{{ s.direction }}"
                                data-start-hm="{{ s.start_hm }}"
                                data-end-hm="{{ s.end_hm }}"
-                               data-activity="{{ s.activity|default_if_none:''|escape }}"
                                data-comment="{{ s.comment|default_if_none:''|escape }}">
                             <span class="shift-card__direction">{{ s.status_label }}</span>
                             <span class="shift-card__time">{{ s.time_label }}</span>
-                            {% if s.activity or s.comment %}
-                              <span class="shift-card__meta">
-                                {% if s.activity %}{{ s.activity }}{% endif %}{% if s.activity and s.comment %} · {% endif %}{% if s.comment %}{{ s.comment }}{% endif %}
-                              </span>
-                            {% endif %}
+                            {% if s.comment %}<span class="shift-card__meta">{{ s.comment }}</span>{% endif %}
+                          </div>
+                        {% elif s.status == 'training' or s.status == 'meeting' or s.status == 'onboard' %}
+                          <div class="shift-card shift-card--work"
+                               data-shift-id="{{ s.id }}"
+                               data-status="{{ s.status }}"
+                               data-direction="{{ s.direction }}"
+                               data-start-hm="{{ s.start_hm }}"
+                               data-end-hm="{{ s.end_hm }}"
+                               data-comment="{{ s.comment|default_if_none:''|escape }}">
+                            <span class="shift-card__direction">{{ s.status_label }}</span>
+                            <span class="shift-card__time">{{ s.time_label }}</span>
+                            {% if s.comment %}<span class="shift-card__meta">{{ s.comment }}</span>{% endif %}
                           </div>
                         {% else %}
                           <div class="shift-card shift-card--other"
@@ -397,19 +398,16 @@
                                data-direction="{{ s.direction }}"
                                data-start-hm="{{ s.start_hm }}"
                                data-end-hm="{{ s.end_hm }}"
-                               data-activity="{{ s.activity|default_if_none:''|escape }}"
                                data-comment="{{ s.comment|default_if_none:''|escape }}">
                             <span class="shift-card__direction">{{ s.direction_label }}</span>
                             <span class="shift-card__time">{{ s.time_label }}</span>
-                            <span class="shift-card__meta">
-                              {{ s.status_label }}{% if s.activity %} · {{ s.activity }}{% endif %}{% if s.comment %} · {{ s.comment }}{% endif %}
-                            </span>
+                            <span class="shift-card__meta">{{ s.status_label }}{% if s.comment %} · {{ s.comment }}{% endif %}</span>
                           </div>
                         {% endif %}
                       {% endfor %}
                     </div>
                   {% else %}
-                    <div class="shift-empty">Немає змін</div>
+                    <div class="shift-empty" role="button" tabindex="0">Немає змін</div>
                   {% endif %}
                 </td>
               {% endfor %}
@@ -430,6 +428,9 @@
   <button class="shift-menu__item" type="button" data-action="edit">
     Редагувати зміну…
   </button>
+  <button class="shift-menu__item" type="button" data-action="add_hours">
+    Додати години…
+  </button>
   <!-- Future quick actions can be added here -->
   <button class="shift-menu__item text-danger" type="button" data-action="close">
     Закрити
@@ -449,16 +450,18 @@
           <input type="hidden" name="shift_id" id="editShiftId">
           <div class="row g-3">
             <div class="col-6">
-              <label for="editShiftStart" class="form-label">Початок</label>
-              <input type="time" class="form-control" id="editShiftStart" name="start_time" step="300">
+              <label for="editShiftStartTime" class="form-label">Початок</label>
+              <input type="text" id="editShiftStartTime" name="start_time"
+                     class="form-control" list="hhmmList" placeholder="HH:MM" autocomplete="off">
             </div>
             <div class="col-6">
-              <label for="editShiftEnd" class="form-label">Завершення</label>
-              <input type="time" class="form-control" id="editShiftEnd" name="end_time" step="300">
+              <label for="editShiftEndTime" class="form-label">Завершення</label>
+              <input type="text" id="editShiftEndTime" name="end_time"
+                     class="form-control" list="hhmmList" placeholder="HH:MM" autocomplete="off">
             </div>
             <div class="col-6">
               <label for="editShiftStatus" class="form-label">Статус</label>
-              <select id="editShiftStatus" name="status" class="form-select">
+              <select id="editShiftStatus" name="status" class="form-select" data-no-enhance="1">
                 {% for key,label in status_choices %}
                   <option value="{{ key }}">{{ label }}</option>
                 {% endfor %}
@@ -466,14 +469,11 @@
             </div>
             <div class="col-6">
               <label for="editShiftDirection" class="form-label">Напрямок</label>
-              <select id="editShiftDirection" name="direction" class="form-select">
+              <select id="editShiftDirection" name="direction" class="form-select" data-no-enhance="1">
                 {% for key,label in direction_choices %}
                   <option value="{{ key }}">{{ label }}</option>
                 {% endfor %}
               </select>
-            </div>
-            <div class="col-12">
-              <label for="editShiftActivity" class="form-label">Активність</label>
             </div>
             <div class="col-12">
               <label for="editShiftComment" class="form-label">Коментар</label>
@@ -484,8 +484,80 @@
         <div class="alert alert-danger d-none mt-3" id="editShiftError"></div>
       </div>
       <div class="modal-footer">
+        <button type="button" class="btn btn-outline-danger me-auto" id="deleteShiftBtn">Видалити</button>
         <button type="button" class="btn btn-soft" data-bs-dismiss="modal">Скасувати</button>
         <button type="button" class="btn btn-accent" id="saveShiftBtn">Зберегти</button>
+      </div>
+    </div>
+  </div>
+  </div>
+
+<!-- Common suggestions for time inputs -->
+<datalist id="hhmmList">
+  {% for h in hours %}
+    <option value="{{ h }}:00"></option>
+  {% endfor %}
+  <option value="00:30"></option>
+  <option value="12:30"></option>
+  <option value="18:30"></option>
+  <option value="23:30"></option>
+  <!-- 24:00 allowed only for end time -->
+  <option value="24:00"></option>
+  <!-- Users can type any HH:MM like 14:17 -->
+  
+</datalist>
+
+<!-- Add Hours Modal -->
+<div class="modal fade" id="addHoursModal" tabindex="-1" aria-labelledby="addHoursLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="addHoursLabel">Додати години</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <form id="addHoursForm">
+          <input type="hidden" id="addHoursBaseShiftId">
+          <input type="hidden" id="addHoursAgentId">
+          <input type="hidden" id="addHoursDate">
+          <div class="row g-3">
+            <div class="col-6">
+              <label for="addHoursStartTime" class="form-label">Початок</label>
+              <input type="text" id="addHoursStartTime" name="start_time"
+                     class="form-control" list="hhmmList" placeholder="HH:MM" autocomplete="off">
+            </div>
+            <div class="col-6">
+              <label for="addHoursEndTime" class="form-label">Завершення</label>
+              <input type="text" id="addHoursEndTime" name="end_time"
+                     class="form-control" list="hhmmList" placeholder="HH:MM" autocomplete="off">
+            </div>
+            <div class="col-6">
+              <label for="addHoursStatus" class="form-label">Статус</label>
+              <select id="addHoursStatus" name="status" class="form-select" data-no-enhance="1">
+                {% for key,label in status_choices %}
+                  <option value="{{ key }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-6">
+              <label for="addHoursDirection" class="form-label">Напрямок</label>
+              <select id="addHoursDirection" name="direction" class="form-select" data-no-enhance="1">
+                {% for key,label in direction_choices %}
+                  <option value="{{ key }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12">
+              <label for="addHoursComment" class="form-label">Коментар</label>
+              <textarea class="form-control" id="addHoursComment" name="comment" rows="2"></textarea>
+            </div>
+          </div>
+        </form>
+        <div class="alert alert-danger d-none mt-3" id="addHoursError"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-soft" data-bs-dismiss="modal">Скасувати</button>
+        <button type="button" class="btn btn-accent" id="saveAddHoursBtn">Додати</button>
       </div>
     </div>
   </div>
@@ -509,39 +581,149 @@ document.addEventListener('shown.bs.dropdown', function (e) {
 document.addEventListener('DOMContentLoaded', function () {
   const menu = document.getElementById('shiftContextMenu');
   const editModalEl = document.getElementById('editShiftModal');
-  const bootstrapLib = window.bootstrap;
 
-  if (!menu || !editModalEl || !bootstrapLib || !bootstrapLib.Modal) {
+  if (!menu || !editModalEl) {
     return;
   }
 
-  const editModal = bootstrapLib.Modal.getOrCreateInstance(editModalEl);
-  const saveBtn = document.getElementById('saveShiftBtn');
-  const form = document.getElementById('editShiftForm');
-  const errBox = document.getElementById('editShiftError');
+  const bootstrapLib = window.bootstrap || (typeof bootstrap !== 'undefined' ? bootstrap : null);
+  const hasBootstrapModal = !!(bootstrapLib && bootstrapLib.Modal);
+  const editModal = hasBootstrapModal ? bootstrapLib.Modal.getOrCreateInstance(editModalEl) : null;
+  const addModalEl = document.getElementById('addHoursModal');
+  const addModal = (hasBootstrapModal && addModalEl) ? bootstrapLib.Modal.getOrCreateInstance(addModalEl) : null;
+  let fallbackBackdrop = null;
 
-  function fillFormFields(data) {
-    if (!data) {
+  function openEditModal() {
+    if (hasBootstrapModal && editModal) {
+      editModal.show();
       return;
     }
-    document.getElementById('editShiftId').value = data.id || '';
-    if (data.status !== undefined) {
-      document.getElementById('editShiftStatus').value = data.status;
+    if (!fallbackBackdrop) {
+      fallbackBackdrop = document.createElement('div');
+      fallbackBackdrop.className = 'modal-backdrop fade show';
+      document.body.appendChild(fallbackBackdrop);
     }
-    if (data.direction !== undefined) {
-      document.getElementById('editShiftDirection').value = data.direction;
+    editModalEl.classList.add('show');
+    editModalEl.style.display = 'block';
+    editModalEl.removeAttribute('aria-hidden');
+    editModalEl.setAttribute('aria-modal', 'true');
+    document.body.classList.add('modal-open');
+  }
+
+  function closeEditModal() {
+    if (hasBootstrapModal && editModal) {
+      editModal.hide();
+      return;
     }
-    if (data.start_time !== undefined) {
-      document.getElementById('editShiftStart').value = data.start_time;
+    editModalEl.classList.remove('show');
+    editModalEl.style.display = 'none';
+    editModalEl.setAttribute('aria-hidden', 'true');
+    editModalEl.removeAttribute('aria-modal');
+    if (fallbackBackdrop) {
+      fallbackBackdrop.remove();
+      fallbackBackdrop = null;
     }
-    if (data.end_time !== undefined) {
-      document.getElementById('editShiftEnd').value = data.end_time;
+    document.body.classList.remove('modal-open');
+  }
+
+  editModalEl.querySelectorAll('[data-bs-dismiss="modal"]').forEach((btn) => {
+    btn.addEventListener('click', function () {
+      if (!hasBootstrapModal) {
+        closeEditModal();
+      }
+    });
+  });
+
+  editModalEl.addEventListener('click', function (evt) {
+    if (!hasBootstrapModal && evt.target === editModalEl) {
+      closeEditModal();
     }
-    if (data.activity !== undefined) {
-      document.getElementById('editShiftActivity').value = data.activity;
+  });
+
+  document.addEventListener('keydown', function (evt) {
+    if (!hasBootstrapModal) {
+      const isOpen = editModalEl.classList.contains('show');
+      if (isOpen && evt.key === 'Escape') {
+        closeEditModal();
+      }
     }
-    if (data.comment !== undefined) {
-      document.getElementById('editShiftComment').value = data.comment;
+  });
+  const saveBtn = document.getElementById('saveShiftBtn');
+  const deleteBtn = document.getElementById('deleteShiftBtn');
+  const form = document.getElementById('editShiftForm');
+  const errBox = document.getElementById('editShiftError');
+  const addSaveBtn = document.getElementById('saveAddHoursBtn');
+  const addErrBox = document.getElementById('addHoursError');
+  const addForm = document.getElementById('addHoursForm');
+  // Click on empty cell to add a new shift
+  document.addEventListener('click', function (e) {
+    const empty = e.target.closest('.shift-empty');
+    if (!empty) return;
+    const cell = empty.closest('td.shift-cell');
+    if (!cell || !addModal) return;
+    const agentId = cell.getAttribute('data-agent-id') || '';
+    const idxStr = cell.getAttribute('data-day-index') || '0';
+    const weekStart = cell.getAttribute('data-week-start') || '';
+
+    const idx = parseInt(idxStr, 10) || 0;
+    let date = new Date(weekStart + 'T00:00:00');
+    if (!isNaN(idx)) { date.setDate(date.getDate() + idx); }
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    const dateIso = `${y}-${m}-${d}`;
+
+    document.getElementById('addHoursBaseShiftId').value = '';
+    document.getElementById('addHoursAgentId').value = agentId;
+    document.getElementById('addHoursDate').value = dateIso;
+
+    // Reasonable defaults
+    const addStartInput = document.getElementById('addHoursStartTime');
+    const addEndInput = document.getElementById('addHoursEndTime');
+    if (addStartInput) addStartInput.value = '09:00';
+    if (addEndInput) addEndInput.value = '18:00';
+    const addDirSel = document.getElementById('addHoursDirection');
+    const addStatusSel = document.getElementById('addHoursStatus');
+    if (addStatusSel) addStatusSel.value = 'work';
+    // leave direction as default (first option)
+    const comm = document.getElementById('addHoursComment');
+    if (comm) comm.value = '';
+    if (addErrBox) { addErrBox.classList.add('d-none'); addErrBox.textContent = ''; }
+    addModal.show();
+  });
+
+  // hour suggestions via datalist; free typing is allowed
+
+  function _padTime(val) {
+    if (!val) return '';
+    const m = String(val).trim().match(/^(\d{1,2})(?::(\d{1,2}))?$/);
+    if (!m) return String(val).trim();
+    let h = parseInt(m[1], 10);
+    let mm = m[2] !== undefined ? parseInt(m[2], 10) : 0;
+    if (isNaN(h) || isNaN(mm)) return String(val).trim();
+    if (h < 0) h = 0; if (h > 24) h = 24;
+    if (h === 24) mm = 0; // only 24:00 allowed
+    if (mm < 0) mm = 0; if (mm > 59) mm = 59;
+    return `${String(h).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+  }
+
+  function fillFormFields(data) {
+    if (!data) return;
+    const mapping = [
+      { id: 'editShiftId', key: 'id', transform: (v)=>v },
+      { id: 'editShiftStatus', key: 'status', transform: (v)=>v },
+      { id: 'editShiftDirection', key: 'direction', transform: (v)=>v },
+      { id: 'editShiftStartTime', key: 'start_time', transform: _padTime },
+      { id: 'editShiftEndTime', key: 'end_time', transform: _padTime },
+      { id: 'editShiftComment', key: 'comment', transform: (v)=>v },
+    ];
+    for (const { id, key, transform } of mapping) {
+      if (!Object.prototype.hasOwnProperty.call(data, key)) continue;
+      const el = document.getElementById(id);
+      if (!el) { console.warn('Shift editor: missing element #'+id); continue; }
+      const raw = data[key];
+      const val = transform ? transform(raw == null ? '' : String(raw)) : (raw == null ? '' : String(raw));
+      el.value = val;
     }
   }
 
@@ -563,8 +745,14 @@ document.addEventListener('DOMContentLoaded', function () {
     menu.style.display = 'none';
   }
   function showMenu(x, y) {
-    menu.style.left = x + 'px';
-    menu.style.top = y + 'px';
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const menuWidth = 260; // approx
+    const menuHeight = 140; // approx
+    const left = Math.max(8, Math.min(x, vw - menuWidth - 8));
+    const top = Math.max(8, Math.min(y, vh - menuHeight - 8));
+    menu.style.left = left + 'px';
+    menu.style.top = top + 'px';
     menu.style.display = 'block';
   }
   function getCookie(name) {
@@ -573,8 +761,29 @@ document.addEventListener('DOMContentLoaded', function () {
     if (parts.length === 2) return parts.pop().split(';').shift();
   }
 
+  // Ensure clicks inside the menu don't immediately propagate to document
+  menu.addEventListener('mousedown', (e) => e.stopPropagation());
+  menu.addEventListener('click', (e) => e.stopPropagation());
   document.addEventListener('click', hideMenu);
   document.addEventListener('scroll', hideMenu, true);
+  // Fallback for environments where 'contextmenu' might be blocked
+  document.addEventListener('mousedown', function (e) {
+    if (e.button !== 2) return; // right button
+    const card = e.target.closest('.shift-card[data-shift-id]');
+    if (!card) return;
+    e.preventDefault();
+    const id = card.getAttribute('data-shift-id');
+    menu.dataset.targetId = id;
+    menu.dataset.initStatus = card.getAttribute('data-status') || '';
+    menu.dataset.initDirection = card.getAttribute('data-direction') || '';
+    menu.dataset.initStart = card.getAttribute('data-start-hm') || '';
+    menu.dataset.initEnd = card.getAttribute('data-end-hm') || '';
+    menu.dataset.initComment = card.getAttribute('data-comment') || '';
+    if (menu.parentElement !== document.body) {
+      document.body.appendChild(menu);
+    }
+    showMenu(e.clientX, e.clientY);
+  });
   document.addEventListener('contextmenu', function (e) {
     const card = e.target.closest('.shift-card[data-shift-id]');
     if (!card) {
@@ -589,12 +798,48 @@ document.addEventListener('DOMContentLoaded', function () {
     menu.dataset.initDirection = card.getAttribute('data-direction') || '';
     menu.dataset.initStart = card.getAttribute('data-start-hm') || '';
     menu.dataset.initEnd = card.getAttribute('data-end-hm') || '';
-    menu.dataset.initActivity = card.getAttribute('data-activity') || '';
     menu.dataset.initComment = card.getAttribute('data-comment') || '';
 
-    const x = e.pageX;
-    const y = e.pageY;
+    // Move the menu under body to avoid overflow clipping
+    if (menu.parentElement !== document.body) {
+      document.body.appendChild(menu);
+    }
+    const x = e.clientX;
+    const y = e.clientY;
     showMenu(x, y);
+  });
+
+  // Optional usability: double‑click a shift to edit directly
+  document.addEventListener('dblclick', function (e) {
+    const card = e.target.closest('.shift-card[data-shift-id]');
+    if (!card) return;
+    const id = card.getAttribute('data-shift-id');
+    // Pre-fill from dataset first
+    fillFormFields({
+      id,
+      status: card.getAttribute('data-status') || '',
+      direction: card.getAttribute('data-direction') || '',
+      start_time: card.getAttribute('data-start-hm') || '',
+      end_time: card.getAttribute('data-end-hm') || '',
+      comment: card.getAttribute('data-comment') || '',
+    });
+    errBox.classList.add('d-none');
+    errBox.textContent = '';
+    openEditModal();
+    saveBtn.disabled = true;
+    fetchShiftDetails(id)
+      .then((data) => {
+        fillFormFields(data);
+        errBox.classList.add('d-none');
+        errBox.textContent = '';
+      })
+      .catch((err) => {
+        errBox.textContent = err.message || 'Не вдалося отримати актуальні дані зміни.';
+        errBox.classList.remove('d-none');
+      })
+      .finally(() => {
+        saveBtn.disabled = false;
+      });
   });
 
   menu.addEventListener('click', function (e) {
@@ -611,13 +856,13 @@ document.addEventListener('DOMContentLoaded', function () {
         direction: menu.dataset.initDirection || '',
         start_time: menu.dataset.initStart || '',
         end_time: menu.dataset.initEnd || '',
-        activity: menu.dataset.initActivity || '',
+        
         comment: menu.dataset.initComment || '',
       };
       fillFormFields(fallbackData);
       errBox.classList.add('d-none');
       errBox.textContent = '';
-      setTimeout(() => editModal.show(), 0);
+      openEditModal();
       saveBtn.disabled = true;
       fetchShiftDetails(fallbackData.id)
         .then((data) => {
@@ -632,20 +877,46 @@ document.addEventListener('DOMContentLoaded', function () {
         .finally(() => {
           saveBtn.disabled = false;
         });
+    } else if (action === 'add_hours') {
+      e.preventDefault();
+      e.stopPropagation();
+      hideMenu();
+      if (!addModal) return;
+      const baseId = menu.dataset.targetId || '';
+      document.getElementById('addHoursBaseShiftId').value = baseId;
+      const startHH = (menu.dataset.initStart || '').trim();
+      const endHH = (menu.dataset.initEnd || '').trim();
+      const dir = menu.dataset.initDirection || '';
+      // Defaults
+      const addStartInput = document.getElementById('addHoursStartTime');
+      const addEndInput = document.getElementById('addHoursEndTime');
+      if (addStartInput) addStartInput.value = startHH || '00:00';
+      if (addEndInput) addEndInput.value = endHH || '01:00';
+      const addDirSel = document.getElementById('addHoursDirection');
+      const addStatusSel = document.getElementById('addHoursStatus');
+      if (addDirSel) addDirSel.value = dir;
+      if (addStatusSel) addStatusSel.value = 'work';
+      const comm = document.getElementById('addHoursComment');
+      if (comm) comm.value = '';
+      if (addErrBox) { addErrBox.classList.add('d-none'); addErrBox.textContent = ''; }
+      addModal.show();
     } else if (action === 'close') {
       hideMenu();
     }
   });
 
   saveBtn.addEventListener('click', async function () {
-    const shiftId = document.getElementById('editShiftId').value;
+    const getVal = (id) => {
+      const el = document.getElementById(id);
+      return el ? el.value : '';
+    };
+    const shiftId = getVal('editShiftId');
     const payload = {
-      status: document.getElementById('editShiftStatus').value,
-      direction: document.getElementById('editShiftDirection').value,
-      start_time: document.getElementById('editShiftStart').value,
-      end_time: document.getElementById('editShiftEnd').value,
-      activity: document.getElementById('editShiftActivity').value,
-      comment: document.getElementById('editShiftComment').value,
+      status: getVal('editShiftStatus'),
+      direction: getVal('editShiftDirection'),
+      start_time: _padTime(getVal('editShiftStartTime')),
+      end_time: _padTime(getVal('editShiftEndTime')),
+      comment: getVal('editShiftComment'),
     };
     saveBtn.disabled = true;
 
@@ -673,6 +944,90 @@ document.addEventListener('DOMContentLoaded', function () {
       saveBtn.disabled = false;
     }
   });
+
+  // Delete shift handler
+  if (deleteBtn) {
+    deleteBtn.addEventListener('click', async function () {
+      const idEl = document.getElementById('editShiftId');
+      const shiftId = idEl ? idEl.value : '';
+      if (!shiftId) {
+        errBox.textContent = 'Невідомий ідентифікатор зміни.';
+        errBox.classList.remove('d-none');
+        return;
+      }
+      const proceed = window.confirm('Видалити цю зміну? Дію неможливо скасувати.');
+      if (!proceed) return;
+      deleteBtn.disabled = true;
+      try {
+        const resp = await fetch(`/ajax/shift/${shiftId}/delete/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken') || '',
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify({}),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !data.ok) {
+          const msg = (data && data.error) ? data.error : `Помилка видалення (${resp.status})`;
+          throw new Error(msg);
+        }
+        window.location.reload();
+      } catch (err) {
+        errBox.textContent = err.message || 'Не вдалося видалити зміну.';
+        errBox.classList.remove('d-none');
+      } finally {
+        deleteBtn.disabled = false;
+      }
+    });
+  }
+  if (addSaveBtn) {
+    addSaveBtn.addEventListener('click', async function () {
+      const getVal = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
+      const baseId = getVal('addHoursBaseShiftId');
+      const payload = {
+        start_time: _padTime(getVal('addHoursStartTime')),
+        end_time: _padTime(getVal('addHoursEndTime')),
+        status: getVal('addHoursStatus'),
+        direction: getVal('addHoursDirection'),
+        comment: getVal('addHoursComment'),
+      };
+      addSaveBtn.disabled = true;
+      try {
+        let url = '';
+        let body = null;
+        if (baseId) {
+          url = `/ajax/shift/${baseId}/add-hours/`;
+          body = JSON.stringify(payload);
+        } else {
+          // create a brand new shift
+          url = `/ajax/shift/create/`;
+          body = JSON.stringify({
+            agent_id: getVal('addHoursAgentId'),
+            date: getVal('addHoursDate'),
+            ...payload,
+          });
+        }
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') || '' },
+          credentials: 'same-origin',
+          body,
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !data.ok) {
+          const msg = (data && data.error) ? data.error : `Помилка збереження (${resp.status})`;
+          throw new Error(msg);
+        }
+        window.location.reload();
+      } catch (err) {
+        if (addErrBox) { addErrBox.textContent = err.message || 'Не вдалося додати години.'; addErrBox.classList.remove('d-none'); }
+      } finally {
+        addSaveBtn.disabled = false;
+      }
+    });
+  }
 });
 </script>
 

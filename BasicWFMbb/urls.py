@@ -33,6 +33,9 @@ from core.views import (
     request_sick_leave,
     upload_sick_leave_proof,
     edit_shift_ajax,
+    add_shift_hours_ajax,
+    delete_shift_ajax,
+    create_shift_ajax,
 )
 
 
@@ -64,6 +67,9 @@ urlpatterns = [
     path("exchange/", exchange_create, name="exchange_create"),
     path("ajax/get-agent-shifts/", get_agent_shifts_for_month, name="ajax_get_agent_shifts"),
     path("ajax/shift/<int:shift_id>/edit/", edit_shift_ajax, name="ajax_edit_shift"),
+    path("ajax/shift/<int:shift_id>/add-hours/", add_shift_hours_ajax, name="ajax_add_shift_hours"),
+    path("ajax/shift/<int:shift_id>/delete/", delete_shift_ajax, name="ajax_delete_shift"),
+    path("ajax/shift/create/", create_shift_ajax, name="ajax_create_shift"),
 ]
 
 if settings.DEBUG:

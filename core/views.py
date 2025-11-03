@@ -46,7 +46,6 @@ class ShiftCard:
     time_label: str
     start_hm: str
     end_hm: str
-    activity: Optional[str]
     comment: Optional[str]
 
 
@@ -152,7 +151,6 @@ def schedule_week(request):
             "end",
             "status",
             "direction",
-            "activity",
             "comment",
         ).order_by("agent_id", "start")
     )
@@ -187,10 +185,6 @@ def schedule_week(request):
                         if line.strip() and not line.strip().lower().startswith("[лікарняний")
                     ]
                     comment = " ".join(cleaned) if cleaned else None
-                activity = entry["activity"] or None
-                if entry["status"] == ShiftStatus.SICK and activity:
-                    if activity.strip().lower() == "лікарняний":
-                        activity = None
                 cells[idx].append(
                     ShiftCard(
                         id=entry["id"],
@@ -203,7 +197,6 @@ def schedule_week(request):
                         time_label=f"{local_start:%H:%M}–{local_end:%H:%M}",
                         start_hm=f"{local_start:%H:%M}",
                         end_hm=f"{local_end:%H:%M}",
-                        activity=activity,
                         comment=comment,
                     )
                 )
@@ -236,6 +229,8 @@ def schedule_week(request):
         "week_param": active_param,
         "status_choices": list(ShiftStatus.choices),
         "direction_choices": list(Direction.choices),
+        # Helper list for HH options (00..24) used by template datalist
+        "hours": [f"{h:02d}" for h in range(0, 25)],
     }
     return render(request, "schedule_week.html", ctx)
 
@@ -282,7 +277,6 @@ def edit_shift_ajax(request, shift_id: int):
                 "direction": shift.direction,
                 "start_time": start_local.strftime("%H:%M"),
                 "end_time": end_local.strftime("%H:%M"),
-                "activity": shift.activity or "",
                 "comment": shift.comment or "",
             },
         }
@@ -318,8 +312,6 @@ def edit_shift_ajax(request, shift_id: int):
             return JsonResponse({"ok": False, "error": "Invalid direction"}, status=400)
         updates["direction"] = direction
 
-    if "activity" in data:
-        updates["activity"] = (data.get("activity") or "").strip()
     if "comment" in data:
         raw_comment = data.get("comment")
         updates["comment"] = raw_comment if (raw_comment is None or isinstance(raw_comment, str)) else str(raw_comment)
@@ -343,9 +335,15 @@ def edit_shift_ajax(request, shift_id: int):
         new_start_local = start_local.replace(hour=hm[0], minute=hm[1], second=0, microsecond=0)
     if end_time_str:
         hm = _parse_hm(end_time_str)
-        if not hm or not (0 <= hm[0] < 24) or not (0 <= hm[1] < 60):
+        # allow 24:00 only for end time
+        if not hm or not (0 <= hm[0] <= 24) or not (0 <= hm[1] < 60):
             return JsonResponse({"ok": False, "error": "Invalid end_time"}, status=400)
-        same_day_end = new_start_local.replace(hour=hm[0], minute=hm[1], second=0, microsecond=0)
+        if hm[0] == 24:
+            if hm[1] != 0:
+                return JsonResponse({"ok": False, "error": "Invalid end_time"}, status=400)
+            same_day_end = new_start_local.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+        else:
+            same_day_end = new_start_local.replace(hour=hm[0], minute=hm[1], second=0, microsecond=0)
         if same_day_end <= new_start_local:
             same_day_end = same_day_end + timedelta(days=1)
         new_end_local = same_day_end
@@ -356,6 +354,29 @@ def edit_shift_ajax(request, shift_id: int):
     if start_time_str or end_time_str:
         updates["start"] = new_start_local
         updates["end"] = new_end_local
+
+        # Prevent overlap with other shifts of the same agent
+        overlap_qs = (
+            Shift.objects.filter(
+                agent_id=shift.agent_id,
+                start__lt=new_end_local,
+                end__gt=new_start_local,
+            )
+            .exclude(pk=shift.pk)
+        )
+        if overlap_qs.exists():
+            # Provide readable conflicting interval
+            tz = timezone.get_current_timezone()
+            conflict = overlap_qs.order_by("start").first()
+            c_start = timezone.localtime(conflict.start, tz)
+            c_end = timezone.localtime(conflict.end, tz)
+            return JsonResponse(
+                {
+                    "ok": False,
+                    "error": f"Перетин із існуючою зміною: {c_start:%d.%m %H:%M}–{c_end:%H:%M}",
+                },
+                status=400,
+            )
 
     if not updates:
         return JsonResponse({"ok": True, "updated": False})
@@ -377,12 +398,287 @@ def edit_shift_ajax(request, shift_id: int):
             "direction": refreshed_shift.direction,
             "start_time": start_local.strftime("%H:%M"),
             "end_time": end_local.strftime("%H:%M"),
-            "activity": refreshed_shift.activity or "",
             "comment": refreshed_shift.comment or "",
         },
     }
 
     return JsonResponse(response_payload)
+
+
+@login_required
+def delete_shift_ajax(request, shift_id: int):
+    """AJAX endpoint to delete a shift.
+
+    Permissions mirror edit_shift_ajax: staff/superuser, users with
+    core.change_shift, or the agent's team lead.
+    """
+    if request.method != "POST":
+        return JsonResponse({"ok": False, "error": "Method not allowed"}, status=405)
+
+    try:
+        shift = Shift.objects.select_related("agent", "agent__team_lead").get(pk=shift_id)
+    except Shift.DoesNotExist:
+        return JsonResponse({"ok": False, "error": "Shift not found"}, status=404)
+
+    user = request.user
+
+    def _user_can_edit() -> bool:
+        if user.is_superuser or user.is_staff:
+            return True
+        if user.has_perm("core.change_shift"):
+            return True
+        agent = getattr(shift, "agent", None)
+        if agent and agent.team_lead_id and agent.team_lead_id == user.id:
+            return True
+        return False
+
+    if not _user_can_edit():
+        return JsonResponse({"ok": False, "error": "Forbidden"}, status=403)
+
+    with transaction.atomic():
+        shift.delete()
+
+    return JsonResponse({"ok": True, "deleted": True})
+
+
+@login_required
+def add_shift_hours_ajax(request, shift_id: int):
+    """Create an additional shift for the same agent/day as the base shift.
+
+    POST JSON/form fields:
+      - start_time: "HH:MM" (0..24 for end 24:00 allowed via end_time parsing)
+      - end_time: "HH:MM" (24:00 allowed)
+      - status: optional, default 'work'
+      - direction: optional, default base shift's direction
+      - activity: optional
+      - comment: optional
+    """
+    if request.method != "POST":
+        return JsonResponse({"ok": False, "error": "Method not allowed"}, status=405)
+
+    try:
+        base = Shift.objects.select_related("agent", "agent__team_lead").get(pk=shift_id)
+    except Shift.DoesNotExist:
+        return JsonResponse({"ok": False, "error": "Shift not found"}, status=404)
+
+    user = request.user
+    allowed = user.is_superuser or user.is_staff or (
+        base.agent and base.agent.team_lead_id == user.id
+    ) or user.has_perm("core.add_shift")
+    if not allowed:
+        return JsonResponse({"ok": False, "error": "Forbidden"}, status=403)
+
+    if request.content_type and "application/json" in request.content_type:
+        try:
+            data = json.loads(request.body.decode("utf-8")) if request.body else {}
+        except json.JSONDecodeError:
+            return JsonResponse({"ok": False, "error": "Invalid JSON"}, status=400)
+    else:
+        data = request.POST
+
+    def _parse_hm(hm: str):
+        try:
+            h, m = hm.split(":", 1)
+            return int(h), int(m)
+        except Exception:
+            return None
+
+    start_time_str = data.get("start_time")
+    end_time_str = data.get("end_time")
+    if not start_time_str or not end_time_str:
+        return JsonResponse({"ok": False, "error": "Missing time"}, status=400)
+
+    tz = timezone.get_current_timezone()
+    base_start_local = timezone.localtime(base.start, tz)
+    base_day = base_start_local.date()
+
+    start_hm = _parse_hm(start_time_str)
+    if not start_hm or not (0 <= start_hm[0] < 24) or not (0 <= start_hm[1] < 60):
+        return JsonResponse({"ok": False, "error": "Invalid start_time"}, status=400)
+
+    end_hm = _parse_hm(end_time_str)
+    if not end_hm or not (0 <= end_hm[0] <= 24) or not (0 <= end_hm[1] < 60):
+        return JsonResponse({"ok": False, "error": "Invalid end_time"}, status=400)
+    if end_hm[0] == 24 and end_hm[1] != 0:
+        return JsonResponse({"ok": False, "error": "Invalid end_time"}, status=400)
+
+    # Build aware datetimes
+    start_dt = timezone.make_aware(
+        datetime.combine(base_day, time(start_hm[0], start_hm[1])), tz
+    )
+    if end_hm[0] == 24:
+        end_dt = timezone.make_aware(
+            datetime.combine(base_day, time(0, 0)), tz
+        ) + timedelta(days=1)
+    else:
+        end_dt = timezone.make_aware(
+            datetime.combine(base_day, time(end_hm[0], end_hm[1])), tz
+        )
+    if end_dt <= start_dt:
+        end_dt = end_dt + timedelta(days=1)
+
+    # Prevent overlap with other shifts of the same agent
+    overlap_qs = Shift.objects.filter(
+        agent_id=base.agent_id,
+        start__lt=end_dt,
+        end__gt=start_dt,
+    )
+    if overlap_qs.exists():
+        tz = timezone.get_current_timezone()
+        conflict = overlap_qs.order_by("start").first()
+        c_start = timezone.localtime(conflict.start, tz)
+        c_end = timezone.localtime(conflict.end, tz)
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": f"Перетин із існуючою зміною: {c_start:%d.%m %H:%M}–{c_end:%H:%M}",
+            },
+            status=400,
+        )
+
+    status = data.get("status") or ShiftStatus.WORK
+    valid_statuses = {k for k, _ in ShiftStatus.choices}
+    if status not in valid_statuses:
+        status = ShiftStatus.WORK
+
+    direction = data.get("direction") or base.direction
+    valid_dirs = {k for k, _ in Direction.choices}
+    if direction not in valid_dirs:
+        direction = base.direction
+
+    comment = data.get("comment")
+
+    with transaction.atomic():
+        new_shift = Shift.objects.create(
+            agent=base.agent,
+            start=start_dt,
+            end=end_dt,
+            direction=direction,
+            status=status,
+            comment=comment,
+        )
+
+    return JsonResponse({"ok": True, "created": True, "id": new_shift.id})
+
+
+@login_required
+def create_shift_ajax(request):
+    """Create a new shift for a given agent and date.
+
+    POST JSON/form fields:
+      - agent_id: integer
+      - date: 'YYYY-MM-DD' (local date)
+      - start_time: 'HH:MM'
+      - end_time: 'HH:MM' (24:00 allowed)
+      - status: optional, default 'work'
+      - direction: optional, default 'calls'
+      - comment: optional
+    """
+    if request.method != "POST":
+        return JsonResponse({"ok": False, "error": "Method not allowed"}, status=405)
+
+    # Parse input
+    if request.content_type and "application/json" in request.content_type:
+        try:
+            data = json.loads(request.body.decode("utf-8")) if request.body else {}
+        except json.JSONDecodeError:
+            return JsonResponse({"ok": False, "error": "Invalid JSON"}, status=400)
+    else:
+        data = request.POST
+
+    try:
+        agent_id = int(data.get("agent_id"))
+    except Exception:
+        return JsonResponse({"ok": False, "error": "agent_id is required"}, status=400)
+
+    try:
+        agent = Agent.objects.select_related("team_lead", "user").get(pk=agent_id)
+    except Agent.DoesNotExist:
+        return JsonResponse({"ok": False, "error": "Agent not found"}, status=404)
+
+    user = request.user
+    allowed = user.is_superuser or user.is_staff or user.has_perm("core.add_shift") or (
+        agent.team_lead_id == user.id if agent.team_lead_id else False
+    )
+    if not allowed:
+        return JsonResponse({"ok": False, "error": "Forbidden"}, status=403)
+
+    date_str = data.get("date")
+    if not date_str:
+        return JsonResponse({"ok": False, "error": "date is required"}, status=400)
+    try:
+        base_date = datetime.fromisoformat(date_str).date()
+    except Exception:
+        return JsonResponse({"ok": False, "error": "Invalid date"}, status=400)
+
+    def _parse_hm(hm: str):
+        try:
+            h, m = hm.split(":", 1)
+            return int(h), int(m)
+        except Exception:
+            return None
+
+    start_time_str = data.get("start_time")
+    end_time_str = data.get("end_time")
+    if not start_time_str or not end_time_str:
+        return JsonResponse({"ok": False, "error": "Missing time"}, status=400)
+
+    start_hm = _parse_hm(start_time_str)
+    end_hm = _parse_hm(end_time_str)
+    if not start_hm or not (0 <= start_hm[0] < 24) or not (0 <= start_hm[1] < 60):
+        return JsonResponse({"ok": False, "error": "Invalid start_time"}, status=400)
+    if not end_hm or not (0 <= end_hm[0] <= 24) or not (0 <= end_hm[1] < 60):
+        return JsonResponse({"ok": False, "error": "Invalid end_time"}, status=400)
+    if end_hm[0] == 24 and end_hm[1] != 0:
+        return JsonResponse({"ok": False, "error": "Invalid end_time"}, status=400)
+
+    tz = timezone.get_current_timezone()
+    start_dt = timezone.make_aware(datetime.combine(base_date, time(start_hm[0], start_hm[1])), tz)
+    if end_hm[0] == 24:
+        end_dt = timezone.make_aware(datetime.combine(base_date, time(0, 0)), tz) + timedelta(days=1)
+    else:
+        end_dt = timezone.make_aware(datetime.combine(base_date, time(end_hm[0], end_hm[1])), tz)
+    if end_dt <= start_dt:
+        end_dt = end_dt + timedelta(days=1)
+
+    # Overlap protection
+    overlap_qs = Shift.objects.filter(
+        agent_id=agent.id,
+        start__lt=end_dt,
+        end__gt=start_dt,
+    )
+    if overlap_qs.exists():
+        conflict = overlap_qs.order_by("start").first()
+        c_start = timezone.localtime(conflict.start, tz)
+        c_end = timezone.localtime(conflict.end, tz)
+        return JsonResponse(
+            {"ok": False, "error": f"Перетин із існуючою зміною: {c_start:%d.%m %H:%M}–{c_end:%H:%M}"},
+            status=400,
+        )
+
+    status = data.get("status") or ShiftStatus.WORK
+    valid_statuses = {k for k, _ in ShiftStatus.choices}
+    if status not in valid_statuses:
+        status = ShiftStatus.WORK
+
+    direction = data.get("direction") or Direction.CALLS
+    valid_dirs = {k for k, _ in Direction.choices}
+    if direction not in valid_dirs:
+        direction = Direction.CALLS
+
+    comment = data.get("comment")
+
+    with transaction.atomic():
+        new_shift = Shift.objects.create(
+            agent=agent,
+            start=start_dt,
+            end=end_dt,
+            direction=direction,
+            status=status,
+            comment=comment,
+        )
+
+    return JsonResponse({"ok": True, "created": True, "id": new_shift.id})
 
 
 def _prepare_agent_entries(shifts_qs, tz, window=None):
@@ -596,18 +892,31 @@ def request_sick_leave(request):
                 locked_shifts = list(
                     shifts_qs.select_for_update().order_by("start")
                 )
-                for shift in locked_shifts:
-                    cleaned_activity = shift.activity or ""
-                    if cleaned_activity.strip().lower() == "лікарняний":
-                        cleaned_activity = ""
 
-                    cleaned_comment = _clean_sick_comment(shift.comment)
+                # Групуємо зміни за локальною датою початку і об'єднуємо
+                groups = {}
+                for sh in locked_shifts:
+                    d = timezone.localtime(sh.start, tz).date()
+                    groups.setdefault(d, []).append(sh)
 
-                    Shift.objects.filter(pk=shift.pk).update(
+                for day, sh_list in groups.items():
+                    sh_list.sort(key=lambda s: s.start)
+                    rep = sh_list[0]
+                    min_start = min(s.start for s in sh_list)
+                    max_end = max(s.end for s in sh_list)
+                    cleaned_comment = _clean_sick_comment(rep.comment)
+
+                    # Оновлюємо репрезентативну зміну до одного запису лікарняного
+                    Shift.objects.filter(pk=rep.pk).update(
+                        start=min_start,
+                        end=max_end,
                         status=ShiftStatus.SICK,
-                        activity=cleaned_activity,
                         comment=cleaned_comment,
                     )
+
+                    # Видаляємо решту змін цього дня
+                    for extra in sh_list[1:]:
+                        extra.delete()
 
                 # Цей блок тепер всередині transaction.atomic()
                 if attachment:
@@ -824,7 +1133,6 @@ def tools(request):
                     "id": shift.id,
                     "direction": shift.get_direction_display(),
                     "status": shift.get_status_display(),
-                    "activity": shift.activity,
                     "start": timezone.localtime(overlap_start, tz),
                     "end": timezone.localtime(overlap_end, tz),
                     "full_start": timezone.localtime(shift.start, tz),
@@ -934,8 +1242,7 @@ def get_agent_shifts_for_month(request):
                 ]
                 if shift.status != ShiftStatus.WORK:
                     label_parts.append(shift.get_status_display())
-                if shift.activity:
-                    label_parts.append(shift.activity)
+                # activity is deprecated; do not include
 
                 shifts_data.append({
                     "id": shift.id,
