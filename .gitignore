@@ -12,12 +12,14 @@ db.sqlite3
 # Python кеш
 __pycache__/
 *.pyc
+media/
 
 # Статика (якщо ви її збираєте командою collectstatic)
 # /static/
-november.xlsx.xlsx
+november.xlsx
 import_for_wfm.csv
 import_for_wfm.xlsx
+import_for_wfm_ukr_names_tl.xlsx
 # (Залиште це закоментованим, поки не знаєте, що робите)
 
 # Файли .env (якщо будете зберігати паролі)

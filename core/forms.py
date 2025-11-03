@@ -1,15 +1,14 @@
 # core/forms.py
 from datetime import datetime, timedelta
-import zipfile
+
 from pathlib import Path
-import tempfile
-import shutil
+
 
 from django import forms
 from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
-from django.core.files import File
+
 from django.db.models import Q
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
@@ -566,7 +565,7 @@ class SickLeaveRequestForm(forms.Form):
                 _("Розмір файлу не може перевищувати %(size)d МБ."),
                 params={"size": max_size_mb},
             )
-        return _compress_uploaded_file(attachment)
+        return attachment
 
 
 class SickLeaveProofUploadForm(forms.ModelForm):
@@ -593,39 +592,7 @@ class SickLeaveProofUploadForm(forms.ModelForm):
                     _("Розмір файлу не може перевищувати %(size)d МБ."),
                     params={"size": max_size_mb},
                 )
-            return _compress_uploaded_file(attachment)
+            return attachment
         raise ValidationError(_("Додайте файл підтвердження."))
 
 
-def _compress_uploaded_file(uploaded_file):
-    original_name = Path(getattr(uploaded_file, "name", "") or "proof").name
-    base_name = Path(original_name).stem or "proof"
-    compressed_name = f"{base_name}.zip"
-
-    if hasattr(uploaded_file, "seek"):
-        uploaded_file.seek(0)
-
-    # Читаємо вміст файлу як байти
-    try:
-        file_content = uploaded_file.read()
-    except Exception as e:
-        # Спробуємо ще раз, якщо файл вже був прочитаний
-        if hasattr(uploaded_file, "seek"):
-            uploaded_file.seek(0)
-            file_content = uploaded_file.read()
-        else:
-            raise e  # Якщо нічого не допомагає, прокидаємо помилку
-
-    temp_file = tempfile.SpooledTemporaryFile(max_size=5 * 1024 * 1024)
-    with zipfile.ZipFile(
-        temp_file,
-        mode="w",
-        compression=zipfile.ZIP_DEFLATED,
-        compresslevel=5,
-        allowZip64=True,
-    ) as archive:
-        # Використовуємо .writestr() для запису байтів напряму
-        archive.writestr(original_name, file_content)
-
-    temp_file.seek(0)
-    return File(temp_file, name=compressed_name)
