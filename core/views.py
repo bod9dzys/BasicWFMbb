@@ -79,6 +79,20 @@ def _format_shift_label(shift: Shift, agent) -> str:
     return f"{agent} · {start_local:%d.%m %H:%M}–{end_part}"
 
 
+def _clean_sick_comment(comment: Optional[str]) -> Optional[str]:
+    """Remove marker lines like '[Лікарняний ...]' and collapse whitespace."""
+    if not comment:
+        return None
+    cleaned = [
+        line.strip()
+        for line in comment.splitlines()
+        if line.strip()
+        and not line.strip().lower().startswith("[лікарняний")
+    ]
+    joined = "\n".join(cleaned).strip()
+    return joined or None
+
+
 def signup(request):
     if request.user.is_authenticated:
         return redirect("schedule_week")
@@ -427,21 +441,22 @@ def request_sick_leave(request):
                     shifts_qs.select_for_update().order_by("start")
                 )
                 for shift in locked_shifts:
-                    shift.status = ShiftStatus.SICK
-                    if shift.activity and shift.activity.strip().lower() == "лікарняний":
-                        shift.activity = ""
-                    if shift.comment:
-                        cleaned_comment_lines = [
-                            line.strip()
-                            for line in shift.comment.splitlines()
-                            if line.strip()
-                               and not line.strip().lower().startswith("[лікарняний")
-                        ]
-                        new_comment = "\n".join(cleaned_comment_lines).strip()
-                        shift.comment = new_comment or None
-                    shift.save()
+                    cleaned_activity = shift.activity or ""
+                    if cleaned_activity.strip().lower() == "лікарняний":
+                        cleaned_activity = ""
+
+                    cleaned_comment = _clean_sick_comment(shift.comment)
+
+                    Shift.objects.filter(pk=shift.pk).update(
+                        status=ShiftStatus.SICK,
+                        activity=cleaned_activity,
+                        comment=cleaned_comment,
+                    )
 
                 # Цей блок тепер всередині transaction.atomic()
+                if attachment:
+                    attach_later = False
+
                 proof = SickLeaveProof.objects.create(
                     agent=agent,
                     start_date=start_date,
@@ -517,18 +532,16 @@ def upload_sick_leave_proof(request, proof_id):
 
     form = SickLeaveProofUploadForm(request.POST, request.FILES, instance=proof)
     if form.is_valid():
-        # form.save(commit=False) оновить attachment на екземплярі proof
-        proof = form.save()
+        upload_timestamp = timezone.now()
 
-        # 2. Оновлюємо решту полів і зберігаємо їх окремо.
-        proof.attach_later = False
-        # Переконуємось, що беремо timestamp з об'єкта, якщо він вже є
-        upload_timestamp = getattr(proof, "upload_timestamp", timezone.now())
-        if not proof.resolved_at:
-            proof.resolved_at = upload_timestamp
+        instance = form.save(commit=False)
+        setattr(instance, "upload_timestamp", upload_timestamp)
+        instance.attach_later = False
+        resolved_at = instance.resolved_at or upload_timestamp
 
-        # Зберігаємо лише ці конкретні поля
-        proof.save(update_fields=["attach_later", "resolved_at"])
+        instance.resolved_at = resolved_at
+        instance.save()
+        form.save_m2m()
 
         messages.success(request, "Підтвердження лікарняного успішно завантажено.")
     else:

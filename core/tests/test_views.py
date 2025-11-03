@@ -45,8 +45,9 @@ class SickLeaveViewTests(TestCase):
                 "start": today.strftime("%Y-%m-%d"),
                 "end": today.strftime("%Y-%m-%d"),
                 "attach_later": False,
+                # файл має бути тут, а не в files=
+                "attachment": self._make_file("proof.txt", b"proof-data"),
             },
-            files={"attachment": self._make_file()},
             follow=True,
         )
 
@@ -61,8 +62,6 @@ class SickLeaveViewTests(TestCase):
         self.assertIsNotNone(proof.attachment)
         self.assertFalse(proof.attach_later)
         self.assertIsNotNone(proof.resolved_at)
-
-        # Перевіряємо, що файл збережено
         self.assertTrue(proof.attachment.name.endswith("proof.txt"))
         agent_slug = slugify(self.agent.user.get_full_name() or self.agent.user.username) or f"agent-{self.agent.pk}"
         self.assertIn(f"sick_leave_proofs/{agent_slug}/", proof.attachment.name)
@@ -119,8 +118,11 @@ class SickLeaveViewTests(TestCase):
         url = reverse("upload_sick_leave_proof", args=[proof.pk])
         response = self.client.post(
             url,
-            data={"next": reverse("requests_sick_leave")},
-            files={"attachment": self._make_file("evidence.png", b"img-bytes")},
+            data={
+                "next": reverse("requests_sick_leave"),
+                # файл тут
+                "attachment": self._make_file("evidence.png", b"img-bytes"),
+            },
             follow=True,
         )
 
@@ -129,6 +131,6 @@ class SickLeaveViewTests(TestCase):
         self.assertFalse(proof.attach_later)
         self.assertIsNotNone(proof.attachment)
         self.assertIsNotNone(proof.resolved_at)
-
-        # Перевіряємо, що файл збережено
         self.assertTrue(proof.attachment.name.endswith("evidence.png"))
+
+
