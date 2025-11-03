@@ -59,6 +59,8 @@
         background: var(--dark);
         backdrop-filter: blur(12px);
         border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+        position: relative;
+        z-index: 1050;
       }
       .navbar-brand {
         color: #f8f9fa;
@@ -334,6 +336,16 @@
         border-color: var(--brand-accent);
         color: #0f172a;
       }
+      .pending-proof-dropdown {
+        max-height: 22rem;
+        overflow-y: auto;
+      }
+      .pending-proof-dropdown__item:last-child {
+        margin-bottom: 0;
+      }
+      .pending-proof-dropdown__form input[type="file"] {
+        font-size: 0.85rem;
+      }
       .nav-item-link {
         color: rgba(248, 249, 250, 0.7);
         font-weight: 500;
@@ -429,6 +441,50 @@
 
         <div class="ms-auto d-flex align-items-center gap-3">
           {% if user.is_authenticated %}
+            {% if has_pending_sick_leave_proof %}
+              <div class="dropdown">
+                <button class="btn btn-warning btn-sm dropdown-toggle text-dark fw-semibold"
+                        type="button"
+                        id="pendingProofDropdown"
+                        data-bs-toggle="dropdown"
+                        data-bs-auto-close="outside"
+                        aria-expanded="false">
+                  Неприкріплені підтвердження ({{ pending_sick_leave_proof_count }})
+                </button>
+                <div class="dropdown-menu dropdown-menu-end p-3 shadow pending-proof-dropdown"
+                     aria-labelledby="pendingProofDropdown"
+                     style="min-width: 320px; max-width: 360px;">
+                  {% for item in pending_sick_leave_proofs %}
+                    <div class="pending-proof-dropdown__item mb-3">
+                      <div class="small fw-semibold mb-1">
+                        {{ item.proof.get_proof_type_display }}
+                      </div>
+                      <div class="text-muted small">
+                        Період: {{ item.proof.start_date|date:"d.m.Y" }} – {{ item.proof.end_date|date:"d.m.Y" }}
+                      </div>
+                      <div class="text-muted small mb-2">
+                        Подано: {{ item.proof.created_at|date:"d.m.Y H:i" }}
+                      </div>
+                      <form action="{% url 'upload_sick_leave_proof' item.proof.pk %}"
+                            method="post"
+                            enctype="multipart/form-data"
+                            class="pending-proof-dropdown__form">
+                        {% csrf_token %}
+                        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                        <div class="mb-2">
+                          {{ item.form.attachment }}
+                        </div>
+                        <button type="submit" class="btn btn-accent btn-sm w-100">
+                          Прикріпити
+                        </button>
+                      </form>
+                    </div>
+                  {% empty %}
+                    <div class="text-muted small">Немає неприкріплених підтверджень.</div>
+                  {% endfor %}
+                </div>
+              </div>
+            {% endif %}
             <span class="text-light small fw-semibold d-none d-md-inline">
               {{ user.get_full_name|default:user.username }}
             </span>

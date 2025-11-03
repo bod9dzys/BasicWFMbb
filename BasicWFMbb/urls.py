@@ -17,6 +17,8 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path
 from django.contrib.auth import views as auth_views
+from django.conf import settings
+from django.conf.urls.static import static
 
 from core.forms import EmailAuthenticationForm
 from core.views import (
@@ -29,6 +31,7 @@ from core.views import (
     dashboard,
     requests_view,
     request_sick_leave,
+    upload_sick_leave_proof,
 )
 
 
@@ -50,8 +53,16 @@ urlpatterns = [
     path("schedule/", schedule_week, name="schedule_week"),
     path("requests/", requests_view, name="requests"),
     path("requests/sick-leave/", request_sick_leave, name="requests_sick_leave"),
+    path(
+        "requests/sick-leave/<int:proof_id>/upload/",
+        upload_sick_leave_proof,
+        name="upload_sick_leave_proof",
+    ),
     path("dashboard/", dashboard, name="dashboard"),
     path("tools/", tools, name="tools"),
     path("exchange/", exchange_create, name="exchange_create"),
     path("ajax/get-agent-shifts/", get_agent_shifts_for_month, name="ajax_get_agent_shifts"),
 ]
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

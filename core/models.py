@@ -1,7 +1,10 @@
 # core/models.py
+from pathlib import Path
 from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
+from django.utils.text import slugify
+from django.contrib.auth import get_user_model
 from simple_history.models import HistoricalRecords
 
 
@@ -112,3 +115,59 @@ class ShiftExchange(models.Model):
     def __str__(self):
         state = "очікує" if self.approved is None else ("схвалено" if self.approved else "відхилено")
         return f"Обмін: {self.from_shift} ⇄ {self.to_shift} [{state}]"
+
+
+def sick_leave_proof_upload_to(instance, filename):
+    agent_name = instance.agent.user.get_full_name() or instance.agent.user.username
+    agent_slug = slugify(agent_name) or f"agent-{instance.agent_id}"
+    stamp_source = getattr(instance, "upload_timestamp", None) or timezone.now()
+    timestamp = stamp_source.strftime("%Y%m%d_%H%M%S")
+    original_name = Path(filename).name or "proof"
+    return f"sick_leave_proofs/{agent_slug}/{timestamp}/{original_name}"
+
+
+class SickLeaveProof(models.Model):
+    PROOF_CHOICES = [
+        ("sick_leave", "Запит на лікарняний"),
+    ]
+
+    agent = models.ForeignKey(
+        Agent,
+        on_delete=models.CASCADE,
+        related_name="sick_leave_proofs",
+    )
+    start_date = models.DateField()
+    end_date = models.DateField()
+    attachment = models.FileField(
+        upload_to=sick_leave_proof_upload_to,
+        blank=True,
+        null=True,
+    )
+    attach_later = models.BooleanField(default=False)
+    submitted_by = models.ForeignKey(
+        get_user_model(),
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="submitted_sick_leave_proofs",
+    )
+    proof_type = models.CharField(
+        max_length=32,
+        choices=PROOF_CHOICES,
+        default="sick_leave",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        period = f"{self.start_date:%d.%m.%Y}–{self.end_date:%d.%m.%Y}"
+        status = "очікує підтвердження" if self.is_pending else "підтверджено"
+        return f"Підтвердження лікарняного для {self.agent} ({period}) – {status}"
+
+    @property
+    def is_pending(self) -> bool:
+        return self.attachment is None

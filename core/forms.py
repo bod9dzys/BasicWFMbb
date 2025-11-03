@@ -1,14 +1,21 @@
 # core/forms.py
 from datetime import datetime, timedelta
+import zipfile
+from pathlib import Path
+import tempfile
+import shutil
 
 from django import forms
 from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
+from django.core.files import File
 from django.db.models import Q
 from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Submit, Field, Layout
-from .models import Shift, Agent, Direction
+from .models import Shift, Agent, Direction, SickLeaveProof
 
 
 class ExchangeCreateForm(forms.Form):
@@ -468,16 +475,24 @@ class SickLeaveRequestForm(forms.Form):
         input_formats=["%Y-%m-%d"],
         required=True,
     )
-    comment = forms.CharField(
-        label="Коментар",
-        widget=forms.Textarea(
+    attachment = forms.FileField(
+        label="Підтвердження лікарняного",
+        required=False,
+        widget=forms.ClearableFileInput(
             attrs={
                 "class": "form-control",
-                "rows": 3,
-                "placeholder": "Додайте деталі за потреби",
             }
         ),
+        help_text="Додайте файл підтвердження",
+    )
+    attach_later = forms.BooleanField(
+        label="Прикріпити пізніше",
         required=False,
+        widget=forms.CheckboxInput(
+            attrs={
+                "class": "form-check-input",
+            }
+        ),
     )
 
     def __init__(self, user, *args, **kwargs):
@@ -531,8 +546,80 @@ class SickLeaveRequestForm(forms.Form):
         if start and end and start > end:
             raise forms.ValidationError("Дата початку має бути раніше або дорівнювати даті завершення.")
 
-        comment = cleaned.get("comment", "")
-        if comment:
-            cleaned["comment"] = comment.strip()
+        attachment = cleaned.get("attachment")
+        attach_later = cleaned.get("attach_later")
+
+        if not attachment and not attach_later:
+            raise forms.ValidationError(
+                _("Додайте підтвердження або оберіть «Прикріпити пізніше».")
+            )
+
+        if attachment:
+            cleaned["attachment"] = self._prepare_attachment(attachment)
 
         return cleaned
+
+    def _prepare_attachment(self, attachment):
+        max_size_mb = 10
+        if attachment.size > max_size_mb * 1024 * 1024:
+            raise ValidationError(
+                _("Розмір файлу не може перевищувати %(size)d МБ."),
+                params={"size": max_size_mb},
+            )
+        return _compress_uploaded_file(attachment)
+
+
+class SickLeaveProofUploadForm(forms.ModelForm):
+    class Meta:
+        model = SickLeaveProof
+        fields = ["attachment"]
+        widgets = {
+            "attachment": forms.ClearableFileInput(
+                attrs={
+                    "class": "form-control",
+                }
+            )
+        }
+        labels = {
+            "attachment": _("Підтвердження лікарняного"),
+        }
+
+    def clean_attachment(self):
+        attachment = self.cleaned_data.get("attachment")
+        if attachment:
+            max_size_mb = 10
+            if attachment.size > max_size_mb * 1024 * 1024:
+                raise ValidationError(
+                    _("Розмір файлу не може перевищувати %(size)d МБ."),
+                    params={"size": max_size_mb},
+                )
+            return _compress_uploaded_file(attachment)
+        raise ValidationError(_("Додайте файл підтвердження."))
+
+
+def _compress_uploaded_file(uploaded_file):
+    original_name = Path(getattr(uploaded_file, "name", "") or "proof").name
+    base_name = Path(original_name).stem or "proof"
+    compressed_name = f"{base_name}.zip"
+
+    if hasattr(uploaded_file, "seek"):
+        uploaded_file.seek(0)
+
+    temp_file = tempfile.SpooledTemporaryFile(max_size=5 * 1024 * 1024)
+    with zipfile.ZipFile(
+        temp_file,
+        mode="w",
+        compression=zipfile.ZIP_DEFLATED,
+        compresslevel=5,
+        allowZip64=True,
+    ) as archive:
+        with archive.open(original_name, "w") as zip_member:
+            if hasattr(uploaded_file, "chunks"):
+                for chunk in uploaded_file.chunks(chunk_size=64 * 1024):
+                    if chunk:
+                        zip_member.write(chunk)
+            else:
+                shutil.copyfileobj(uploaded_file, zip_member, length=64 * 1024)
+
+    temp_file.seek(0)
+    return File(temp_file, name=compressed_name)

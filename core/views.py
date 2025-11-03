@@ -5,13 +5,14 @@ from dataclasses import dataclass
 from typing import Optional
 from io import BytesIO
 from django.utils import timezone
-from django.shortcuts import render, redirect
+from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required, permission_required
 from django.db import transaction
+from django.db.models import Q
 
 from django.http import JsonResponse, HttpResponse
-from .models import Shift, ShiftExchange, Agent, ShiftStatus, Direction
+from .models import Shift, ShiftExchange, Agent, ShiftStatus, Direction, SickLeaveProof
 from .filters import ShiftFilter
 from .forms import (
     ExchangeCreateForm,
@@ -19,6 +20,7 @@ from .forms import (
     ToolsHoursForm,
     DashboardFilterForm,
     SickLeaveRequestForm,
+    SickLeaveProofUploadForm,
 )
 from django.contrib import messages
 from .services import can_swap
@@ -157,6 +159,18 @@ def schedule_week(request):
             idx = (local_start.date() - week_start.date()).days
             if 0 <= idx < 7:
                 local_end = timezone.localtime(entry["end"], tz)
+                comment = entry["comment"] or None
+                if entry["status"] == ShiftStatus.SICK and comment:
+                    cleaned = [
+                        line.strip()
+                        for line in comment.splitlines()
+                        if line.strip() and not line.strip().lower().startswith("[лікарняний")
+                    ]
+                    comment = " ".join(cleaned) if cleaned else None
+                activity = entry["activity"] or None
+                if entry["status"] == ShiftStatus.SICK and activity:
+                    if activity.strip().lower() == "лікарняний":
+                        activity = None
                 cells[idx].append(
                     ShiftCard(
                         status=entry["status"],
@@ -166,8 +180,8 @@ def schedule_week(request):
                             entry["direction"], entry["direction"]
                         ),
                         time_label=f"{local_start:%H:%M}–{local_end:%H:%M}",
-                        activity=entry["activity"] or None,
-                        comment=entry["comment"] or None,
+                        activity=activity,
+                        comment=comment,
                     )
                 )
         table.append({"agent": agent, "cells": cells})
@@ -374,21 +388,29 @@ def requests_view(request):
 
 @login_required
 def request_sick_leave(request):
-    form = SickLeaveRequestForm(request.user, data=request.POST or None)
-    pending_confirmation = False
-    shifts_preview = []
-    time_range_label = ""
-    form_data = {}
-    agent_display = ""
-
+    user_agent = getattr(request.user, "agent", None)
+    pending_filter = Q(attachment__isnull=True) | Q(attachment="")
+    pending_proofs_qs = (
+        user_agent.sick_leave_proofs.filter(pending_filter)
+        if user_agent
+        else SickLeaveProof.objects.none()
+    )
+    form = SickLeaveRequestForm(
+        request.user,
+        data=request.POST or None,
+        files=request.FILES or None,
+    )
     if request.method == "POST" and form.is_valid():
         agent = form.cleaned_data["agent"]
         start_date = form.cleaned_data["start"]
         end_date = form.cleaned_data["end"]
+        attach_later = form.cleaned_data["attach_later"]
+        attachment = form.cleaned_data.get("attachment")
         tz = timezone.get_current_timezone()
         start = timezone.make_aware(datetime.combine(start_date, time.min), tz)
-        end = timezone.make_aware(datetime.combine(end_date + timedelta(days=1), time.min), tz)
-        comment = form.cleaned_data.get("comment") or ""
+        end = timezone.make_aware(
+            datetime.combine(end_date + timedelta(days=1), time.min), tz
+        )
         agent_display = agent.user.get_full_name() or agent.user.username
 
         shifts_qs = Shift.objects.select_related("agent", "agent__user").filter(
@@ -400,70 +422,123 @@ def request_sick_leave(request):
         if not shifts_qs.exists():
             form.add_error(None, "За вказаний період немає змін для оновлення.")
         else:
-            confirm_state = request.POST.get("confirm")
-            if confirm_state == "yes":
-                note = f"[Лікарняний] {comment}" if comment else None
-                with transaction.atomic():
-                    locked_shifts = list(
-                        shifts_qs.select_for_update().order_by("start")
-                    )
-                    for shift in locked_shifts:
-                        shift.status = ShiftStatus.SICK
-                        update_fields = ["status"]
-                        if note:
-                            existing = (shift.comment or "").strip()
-                            if note not in existing:
-                                shift.comment = (
-                                    f"{existing}\n{note}".strip()
-                                    if existing
-                                    else note
-                                )
-                                update_fields.append("comment")
-                        shift.save(update_fields=update_fields)
+            with transaction.atomic():
+                locked_shifts = list(
+                    shifts_qs.select_for_update().order_by("start")
+                )
+                for shift in locked_shifts:
+                    shift.status = ShiftStatus.SICK
+                    update_fields = ["status"]
+                    if shift.activity and shift.activity.strip().lower() == "лікарняний":
+                        shift.activity = ""
+                        update_fields.append("activity")
+                    if shift.comment:
+                        cleaned_comment_lines = [
+                            line.strip()
+                            for line in shift.comment.splitlines()
+                            if line.strip()
+                            and not line.strip().lower().startswith("[лікарняний")
+                        ]
+                        new_comment = "\n".join(cleaned_comment_lines)
+                        if new_comment != shift.comment:
+                            shift.comment = new_comment
+                            update_fields.append("comment")
+                    shift.save(update_fields=update_fields)
 
+                proof = SickLeaveProof.objects.create(
+                    agent=agent,
+                    start_date=start_date,
+                    end_date=end_date,
+                    submitted_by=request.user,
+                    attach_later=attach_later,
+                )
+                if attachment:
+                    if hasattr(attachment, "seek"):
+                        attachment.seek(0)
+                    upload_timestamp = timezone.now()
+                    proof.upload_timestamp = upload_timestamp
+                    proof.attachment.save(attachment.name, attachment, save=False)
+                    proof.attach_later = False
+                    proof.resolved_at = upload_timestamp
+                    proof.save()
+                else:
+                    proof.save()
+
+            if attach_later:
+                messages.warning(
+                    request,
+                    "Зміни позначено як лікарняні. Не забудьте прикріпити підтвердження пізніше.",
+                )
+            else:
                 messages.success(
                     request,
                     f"Зміни для {agent_display} з {start_date:%d.%m.%Y} до {end_date:%d.%m.%Y} позначено як лікарняний.",
                 )
-                return redirect("requests_sick_leave")
-            elif confirm_state == "no":
-                messages.info(request, "Запит на лікарняний скасовано.")
-                return redirect("requests_sick_leave")
-            else:
-                time_range_label = f"{start_date:%d.%m.%Y} – {end_date:%d.%m.%Y}"
-                shifts_preview = [
-                    {
-                        "start": timezone.localtime(shift.start, tz),
-                        "end": timezone.localtime(shift.end, tz),
-                        "direction": shift.get_direction_display(),
-                        "status": shift.get_status_display(),
-                    }
-                    for shift in shifts_qs.order_by("start")
-                ]
-                form_data = {
-                    key: value
-                    for key, value in request.POST.items()
-                    if key not in {"csrfmiddlewaretoken", "confirm"}
-                }
-                if "agent" not in form_data and form.cleaned_data.get("agent"):
-                    form_data["agent"] = str(form.cleaned_data["agent"].pk)
-                pending_confirmation = True
-
+            return redirect("requests_sick_leave")
     has_allowed_agents = getattr(form, "allowed_agents", Agent.objects.none()).exists()
+
+    pending_proofs = []
+    for proof in pending_proofs_qs.select_related("agent__user"):
+        upload_form = SickLeaveProofUploadForm(
+            instance=proof,
+            auto_id=f"id_pending_attachment_{proof.pk}_%s",
+        )
+        pending_proofs.append(
+            {
+                "proof": proof,
+                "form": upload_form,
+            }
+        )
 
     return render(
         request,
         "requests_sick_leave.html",
         {
             "form": form,
-            "pending_confirmation": pending_confirmation,
-            "shifts_preview": shifts_preview,
-            "time_range_label": time_range_label,
-            "form_data": form_data,
-            "agent_display": agent_display,
             "has_allowed_agents": has_allowed_agents,
+            "pending_proofs": pending_proofs,
         },
     )
+
+
+@login_required
+def upload_sick_leave_proof(request, proof_id):
+    proof = get_object_or_404(
+        SickLeaveProof.objects.select_related("agent__user"),
+        pk=proof_id,
+    )
+    if not (
+        proof.agent.user == request.user
+        or request.user.is_staff
+        or request.user.is_superuser
+    ):
+        messages.error(request, "Ви не маєте доступу до цього підтвердження.")
+        return redirect("requests_sick_leave")
+
+    if request.method != "POST":
+        return redirect("requests_sick_leave")
+
+    form = SickLeaveProofUploadForm(
+        request.POST,
+        request.FILES,
+        instance=proof,
+    )
+    if form.is_valid():
+        proof = form.save(commit=False)
+        proof.attach_later = False
+        upload_timestamp = timezone.now()
+        proof.upload_timestamp = upload_timestamp
+        proof.resolved_at = upload_timestamp
+        proof.save()
+        messages.success(request, "Підтвердження лікарняного успішно завантажено.")
+    else:
+        for error in form.errors.get("attachment", []):
+            messages.error(request, error)
+
+    redirect_to = request.POST.get("next") or request.META.get("HTTP_REFERER")
+    if redirect_to:
+        return redirect(redirect_to)
+    return redirect("requests_sick_leave")
 
 
 

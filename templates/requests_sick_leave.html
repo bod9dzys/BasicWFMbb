@@ -14,18 +14,9 @@
     gap: 0.5rem;
     margin-bottom: 1.75rem;
   }
-  .sick-request-card__subtitle {
-    color: rgba(15, 23, 42, 0.65);
-    margin-bottom: 0;
-  }
   .sick-request-form .form-label {
     font-weight: 600;
     color: rgba(15, 23, 42, 0.8);
-  }
-  .sick-request-summary {
-    border-radius: 1rem;
-    border: 1px solid rgba(148, 163, 184, 0.25);
-    background: rgba(255, 255, 255, 0.92);
   }
   .sick-request-form__dates {
     display: flex;
@@ -47,129 +38,158 @@
   .sick-request-form__date-field .flatpickr-input {
     padding-right: 2.5rem;
   }
+  .pending-proof-list {
+    margin-bottom: 2rem;
+    border-radius: 1rem;
+    border: 1px solid rgba(244, 114, 182, 0.35);
+    background: rgba(255, 240, 246, 0.95);
+    padding: 1.5rem;
+  }
+  .pending-proof-item + .pending-proof-item {
+    margin-top: 1.25rem;
+    padding-top: 1.25rem;
+    border-top: 1px dashed rgba(244, 114, 182, 0.4);
+  }
+  .pending-proof-item__header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    align-items: flex-start;
+  }
+  .pending-proof-item__period {
+    font-weight: 600;
+  }
+  .pending-proof-item__form {
+    margin-top: 0.75rem;
+  }
+  .pending-proof-item__actions {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    align-items: center;
+  }
 </style>
 
 <div class="card glass-card sick-request-card">
   <div class="sick-request-card__header">
-    <span class="badge bg-light text-dark text-uppercase fw-semibold small px-3 py-2">Запит</span>
+    <span class="badge bg-light text-dark text-uppercase fw-semibold small px-3 py-2">Запит на лікарняний</span>
     <h1 class="h4 fw-semibold mb-0">Запит на лікарняний</h1>
   </div>
 
-  {% if pending_confirmation %}
-    <div class="alert alert-warning" role="alert">
-      <strong>Підтвердження:</strong>
-      Ви дійсно хочете відправити запит на лікарняний для
-      <span class="fw-semibold">{{ agent_display }}</span>
-      на період <span class="fw-semibold">{{ time_range_label }}</span>?
-    </div>
-
-    {% if shifts_preview %}
-      <div class="sick-request-summary mb-4">
-        <div class="list-group list-group-flush">
-          {% for shift in shifts_preview %}
-            <div class="list-group-item">
-              <div class="fw-semibold">
-                {{ shift.start|date:"d.m.Y H:i" }} – {{ shift.end|date:"H:i" }}
+  {% if pending_proofs %}
+    <div class="pending-proof-list" id="pending-proof">
+      <h2 class="h5 mb-3 text-danger">
+        Неприкріплені підтвердження
+      </h2>
+      {% for item in pending_proofs %}
+        <div class="pending-proof-item">
+          <div class="pending-proof-item__header">
+            <span class="pending-proof-item__period">{{ item.proof.get_proof_type_display }}</span>
+            <span class="text-muted small">Період: {{ item.proof.start_date|date:"d.m.Y" }} – {{ item.proof.end_date|date:"d.m.Y" }}</span>
+            <span class="text-muted small">Подано: {{ item.proof.created_at|date:"d.m.Y H:i" }}</span>
+          </div>
+          <form method="post"
+                action="{% url 'upload_sick_leave_proof' item.proof.pk %}"
+                enctype="multipart/form-data"
+                class="pending-proof-item__form">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <div class="pending-proof-item__actions">
+              <div class="flex-grow-1">
+                {{ item.form.attachment }}
+                {% if item.form.errors %}
+                  <div class="text-danger small mt-1">
+                    {{ item.form.errors.attachment.0 }}
+                  </div>
+                {% else %}
+                  <div class="form-text">Додайте файл підтвердження для цього періоду — його буде автоматично заархівовано.</div>
+                {% endif %}
               </div>
-              <div class="text-muted small">
-                {{ shift.direction }} · поточний статус: {{ shift.status }}
-              </div>
+              <button type="submit" class="btn btn-accent btn-sm">Прикріпити</button>
             </div>
-          {% endfor %}
+          </form>
         </div>
-      </div>
-    {% endif %}
-
-    {% if form_data.comment %}
-      <div class="alert alert-info">
-        <span class="fw-semibold">Коментар:</span>
-        <span>{{ form_data.comment }}</span>
-      </div>
-    {% endif %}
-
-    <div class="d-flex flex-wrap gap-2">
-      <form method="post">
-        {% csrf_token %}
-        {% for key, value in form_data.items %}
-          <input type="hidden" name="{{ key }}" value="{{ value|escape }}">
-        {% endfor %}
-        <input type="hidden" name="confirm" value="yes">
-        <button type="submit" class="btn btn-accent">Так, підтвердити</button>
-      </form>
-      <form method="post">
-        {% csrf_token %}
-        {% for key, value in form_data.items %}
-          <input type="hidden" name="{{ key }}" value="{{ value|escape }}">
-        {% endfor %}
-        <input type="hidden" name="confirm" value="no">
-        <button type="submit" class="btn btn-soft">Ні, скасувати</button>
-      </form>
+      {% endfor %}
     </div>
-  {% else %}
-    <form method="post" class="sick-request-form row g-3">
-      {% csrf_token %}
-      {% if form.non_field_errors %}
-        <div class="col-12">
-          <div class="alert alert-danger mb-0">
-            {{ form.non_field_errors.0 }}
-          </div>
-        </div>
-      {% endif %}
-      <div class="col-12 col-md-6">
-        <label for="{{ form.agent.id_for_label }}" class="form-label">{{ form.agent.label }}</label>
-        {{ form.agent }}
-        {% if form.agent.errors %}
-          <div class="text-danger small mt-1">{{ form.agent.errors.0 }}</div>
-        {% endif %}
-      </div>
-      <div class="col-12">
-        <div class="sick-request-form__dates">
-          <div class="sick-request-form__date-field">
-            <label for="{{ form.start.id_for_label }}" class="form-label">{{ form.start.label }}</label>
-            {{ form.start }}
-            <span class="calendar-icon" aria-hidden="true">
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
-                <rect x="3.75" y="5.25" width="16.5" height="15" rx="2.25"></rect>
-                <path d="M8 3.75v2.5m8-2.5v2.5M3.75 9.75h16.5"></path>
-              </svg>
-            </span>
-            {% if form.start.errors %}
-              <div class="text-danger small mt-1">{{ form.start.errors.0 }}</div>
-            {% endif %}
-          </div>
-          <div class="sick-request-form__date-field">
-            <label for="{{ form.end.id_for_label }}" class="form-label">{{ form.end.label }}</label>
-            {{ form.end }}
-            <span class="calendar-icon" aria-hidden="true">
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
-                <rect x="3.75" y="5.25" width="16.5" height="15" rx="2.25"></rect>
-                <path d="M8 3.75v2.5m8-2.5v2.5M3.75 9.75h16.5"></path>
-              </svg>
-            </span>
-            {% if form.end.errors %}
-              <div class="text-danger small mt-1">{{ form.end.errors.0 }}</div>
-            {% endif %}
-          </div>
-        </div>
-      </div>
-      <div class="col-12">
-        <label for="{{ form.comment.id_for_label }}" class="form-label">{{ form.comment.label }}</label>
-        {{ form.comment }}
-        {% if form.comment.errors %}
-          <div class="text-danger small mt-1">{{ form.comment.errors.0 }}</div>
-        {% endif %}
-      </div>
-      {% if not has_allowed_agents %}
-        <div class="col-12">
-          <div class="alert alert-info mb-0">
-            Наразі немає доступних агентів для створення запиту.
-          </div>
-        </div>
-      {% endif %}
-      <div class="col-12 d-flex justify-content-end">
-        <button type="submit" class="btn btn-accent" {% if not has_allowed_agents %}disabled{% endif %}>Відправити</button>
-      </div>
-    </form>
   {% endif %}
+
+  <form method="post" class="sick-request-form row g-3" enctype="multipart/form-data">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div class="col-12">
+        <div class="alert alert-danger mb-0">
+          {{ form.non_field_errors.0 }}
+        </div>
+      </div>
+    {% endif %}
+    <div class="col-12 col-md-6">
+      <label for="{{ form.agent.id_for_label }}" class="form-label">{{ form.agent.label }}</label>
+      {{ form.agent }}
+      {% if form.agent.errors %}
+        <div class="text-danger small mt-1">{{ form.agent.errors.0 }}</div>
+      {% endif %}
+    </div>
+    <div class="col-12">
+      <div class="sick-request-form__dates">
+        <div class="sick-request-form__date-field">
+          <label for="{{ form.start.id_for_label }}" class="form-label">{{ form.start.label }}</label>
+          {{ form.start }}
+          <span class="calendar-icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+              <rect x="3.75" y="5.25" width="16.5" height="15" rx="2.25"></rect>
+              <path d="M8 3.75v2.5m8-2.5v2.5M3.75 9.75h16.5"></path>
+            </svg>
+          </span>
+          {% if form.start.errors %}
+            <div class="text-danger small mt-1">{{ form.start.errors.0 }}</div>
+          {% endif %}
+        </div>
+        <div class="sick-request-form__date-field">
+          <label for="{{ form.end.id_for_label }}" class="form-label">{{ form.end.label }}</label>
+          {{ form.end }}
+          <span class="calendar-icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+              <rect x="3.75" y="5.25" width="16.5" height="15" rx="2.25"></rect>
+              <path d="M8 3.75v2.5m8-2.5v2.5M3.75 9.75h16.5"></path>
+            </svg>
+          </span>
+          {% if form.end.errors %}
+            <div class="text-danger small mt-1">{{ form.end.errors.0 }}</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-12">
+      <label for="{{ form.attachment.id_for_label }}" class="form-label">{{ form.attachment.label }}</label>
+      {{ form.attachment }}
+      {% if form.attachment.help_text %}
+        <div class="form-text">{{ form.attachment.help_text }}</div>
+      {% endif %}
+      {% if form.attachment.errors %}
+        <div class="text-danger small mt-1">{{ form.attachment.errors.0 }}</div>
+      {% endif %}
+    </div>
+    <div class="col-12">
+      <div class="form-check">
+        {{ form.attach_later }}
+        <label class="form-check-label" for="{{ form.attach_later.id_for_label }}">
+          {{ form.attach_later.label }}
+        </label>
+      </div>
+      {% if form.attach_later.errors %}
+        <div class="text-danger small mt-1">{{ form.attach_later.errors.0 }}</div>
+      {% endif %}
+    </div>
+    {% if not has_allowed_agents %}
+      <div class="col-12">
+        <div class="alert alert-info mb-0">
+          Наразі немає доступних агентів для створення запиту.
+        </div>
+      </div>
+    {% endif %}
+    <div class="col-12 d-flex justify-content-end">
+      <button type="submit" class="btn btn-accent" {% if not has_allowed_agents %}disabled{% endif %}>Відправити</button>
+    </div>
+  </form>
 </div>
 {% endblock %}
