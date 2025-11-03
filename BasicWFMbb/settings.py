@@ -7,20 +7,18 @@ from dotenv import load_dotenv
 import dj_database_url
 import os
 
+# 1. Завантажуємо .env (це у вас працює)
 load_dotenv()
 
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
+# 2. Визначаємо BASE_DIR (це у вас працює)
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
-
+# 3. Базові налаштування
 SECRET_KEY = os.environ.get(
     'SECRET_KEY',
     'django-insecure-f=%z%o-_z(05*+im8g9%iiuhs_o+wylhx)5lnnf708zs$+inq2'
 )
-
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
 # --- Налаштування хостів (ALLOWED_HOSTS) ---
@@ -35,7 +33,6 @@ if DJANGO_ALLOWED_HOSTS:
 
 
 # --- Статика (CSS, JS) ---
-# WhiteNoise краще налаштовувати до INSTALLED_APPS, хоча це не критично
 STATIC_URL = 'static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 STATIC_ROOT = BASE_DIR / 'staticfiles'
@@ -43,36 +40,37 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 # -------------------------
 
 
-# ▼▼▼ КРИТИЧНЕ ВИПРАВЛЕННЯ: БЛОК МЕДІА-ФАЙЛІВ ПЕРЕМІЩЕНО СЮДИ ▼▼▼
-# --- Медіа (Завантажені файли) ---
+# ▼▼▼ КРИТИЧНИЙ БЛОК: МЕДІА-ФАЙЛИ (МАЄ БУТИ ДО INSTALLED_APPS) ▼▼▼
 GS_BUCKET_NAME = os.environ.get('GS_BUCKET_NAME')
 GCS_CREDENTIALS_FILE = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
+GCS_KEYFILE_PATH = None
 
-# Цей блок має бути ДО INSTALLED_APPS
 if GS_BUCKET_NAME and GCS_CREDENTIALS_FILE:
     if not os.path.isabs(GCS_CREDENTIALS_FILE):
-        GCS_KEYFILE_PATH = BASE_DIR / GCS_CREDENTIALS_FILE
+        # Ваш лог показує, що файл лежить у папці /BasicWFMbb/, поруч з settings.py
+        GCS_KEYFILE_PATH = BASE_DIR / 'BasicWFMbb' / GCS_CREDENTIALS_FILE
     else:
-        GCS_KEYFILE_PATH = GCS_CREDENTIALS_FILE
+        GCS_KEYFILE_PATH = Path(GCS_CREDENTIALS_FILE) # Для абсолютних шляхів
 
-    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = str(GCS_KEYFILE_PATH)
+    if GCS_KEYFILE_PATH and GCS_KEYFILE_PATH.exists():
+        print(f"!!! GCS INIT: Ключ знайдено: {GCS_KEYFILE_PATH}")
+        os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = str(GCS_KEYFILE_PATH)
 
-    if not Path(GCS_KEYFILE_PATH).exists():
-        print("=" * 50)
-        print(f"ПОМИЛКА: Файл ключа GCS не знайдено: {GCS_KEYFILE_PATH}")
-        print("Використовую локальне сховище.")
-        print("=" * 50)
-        DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'
-        MEDIA_URL = 'media/'
-        MEDIA_ROOT = BASE_DIR / 'media'
-    else:
-        print(f"OK: Ключ GCS знайдено. Використовую Google Cloud Storage.")
+        # Встановлюємо сховище GCS
         DEFAULT_FILE_STORAGE = 'storages.backends.gcloud.GoogleCloudStorage'
         GS_DEFAULT_ACL = 'publicRead'
         MEDIA_URL = f'https://storage.googleapis.com/{GS_BUCKET_NAME}/media/'
         MEDIA_ROOT = 'media/'
+
+        # Новий діагностичний print
+        print(f"!!! GCS INIT: DEFAULT_FILE_STORAGE ВСТАНОВЛЕНО в 'GoogleCloudStorage'")
+    else:
+        print(f"!!! GCS INIT: ПОМИЛКА! Ключ не знайдено за шляхом: {GCS_KEYFILE_PATH}")
+        DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'
+        MEDIA_URL = 'media/'
+        MEDIA_ROOT = BASE_DIR / 'media'
 else:
-    print("OK: GCS не налаштовано, використовую локальне сховище 'media/'.")
+    print("!!! GCS INIT: GCS не налаштовано, використовую локальне сховище 'media/'.")
     DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'
     MEDIA_URL = 'media/'
     MEDIA_ROOT = BASE_DIR / 'media'
@@ -81,6 +79,8 @@ else:
 
 
 # Application definition
+# Django прочитає 'core' і завантажить models.py ТУТ,
+# тому DEFAULT_FILE_STORAGE вже має бути визначено.
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -89,7 +89,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
 
-    'core',
+    'core', # <--- Цей рядок завантажує core/models.py
 
     'crispy_forms',
     'crispy_bootstrap5',
@@ -97,7 +97,7 @@ INSTALLED_APPS = [
     'import_export',
     'simple_history',
 
-    'storages', # 'storages' має бути тут
+    'storages',
 ]
 
 CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap5"
@@ -105,7 +105,7 @@ CRISPY_TEMPLATE_PACK = "bootstrap5"
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware', # Має бути тут, одразу після Security
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
