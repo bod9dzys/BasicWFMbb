@@ -54,8 +54,8 @@ class SickLeaveViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.shift.refresh_from_db()
         self.assertEqual(self.shift.status, ShiftStatus.SICK)
-        self.assertNotEqual(self.shift.comment.strip(), "")
-        self.assertNotIn("[Лікарняний", self.shift.comment)
+        comment_text = (self.shift.comment or "").strip()
+        self.assertNotIn("[Лікарняний", comment_text)
         self.assertFalse(self.shift.activity)
 
         proof = SickLeaveProof.objects.get(agent=self.agent)

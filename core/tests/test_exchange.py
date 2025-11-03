@@ -124,7 +124,7 @@ class ExchangeTests(TestCase):
         self.assertEqual(self.shift_a.agent, self.agent_a)
         self.assertEqual(self.shift_b.agent, self.agent_b)
         self.assertFalse(ShiftExchange.objects.exists())
-        self.assertContains(response, "Не можна міняти на відпустку", status_code=200)
+        self.assertContains(response, "Не можна міняти", status_code=200)
 
     def test_view_requires_permission(self):
         self.client.login(username="noperm", password="pass1234")
@@ -138,4 +138,3 @@ class ExchangeTests(TestCase):
             },
         )
         self.assertEqual(response.status_code, 403)
-

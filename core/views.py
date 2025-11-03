@@ -428,10 +428,8 @@ def request_sick_leave(request):
                 )
                 for shift in locked_shifts:
                     shift.status = ShiftStatus.SICK
-                    update_fields = ["status"]
                     if shift.activity and shift.activity.strip().lower() == "лікарняний":
                         shift.activity = ""
-                        update_fields.append("activity")
                     if shift.comment:
                         cleaned_comment_lines = [
                             line.strip()
@@ -439,11 +437,9 @@ def request_sick_leave(request):
                             if line.strip()
                             and not line.strip().lower().startswith("[лікарняний")
                         ]
-                        new_comment = "\n".join(cleaned_comment_lines)
-                        if new_comment != shift.comment:
-                            shift.comment = new_comment
-                            update_fields.append("comment")
-                    shift.save(update_fields=update_fields)
+                        new_comment = "\n".join(cleaned_comment_lines).strip()
+                        shift.comment = new_comment or None
+                    shift.save()
 
                 proof = SickLeaveProof.objects.create(
                     agent=agent,
@@ -518,13 +514,13 @@ def upload_sick_leave_proof(request, proof_id):
     if request.method != "POST":
         return redirect("requests_sick_leave")
 
-    form = SickLeaveProofUploadForm(
-        request.POST,
-        request.FILES,
-        instance=proof,
-    )
+    form = SickLeaveProofUploadForm(request.POST, request.FILES, instance=proof)
     if form.is_valid():
-        proof = form.save(commit=False)
+        proof = form.instance
+        attachment = form.cleaned_data["attachment"]
+        if hasattr(attachment, "seek"):
+            attachment.seek(0)
+        proof.attachment = attachment
         proof.attach_later = False
         upload_timestamp = timezone.now()
         proof.upload_timestamp = upload_timestamp
