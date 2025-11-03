@@ -149,11 +149,40 @@
     width: 100%;
     will-change: transform;
   }
+  .shift-card[data-shift-id] {
+    cursor: context-menu;
+  }
   .shift-card__direction {
     font-size: 0.82rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     font-weight: 600;
+    color: var(--text-primary);
+  }
+  /* Context menu */
+  .shift-menu {
+    position: absolute;
+    z-index: 2000;
+    min-width: 220px;
+    background: #fff;
+    border: 1px solid rgba(148,163,184,0.25);
+    border-radius: 0.75rem;
+    box-shadow: 0 16px 36px rgba(15,23,42,0.15);
+    padding: 0.25rem;
+    display: none;
+  }
+  .shift-menu__item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    border-radius: 0.6rem;
+  }
+  .shift-menu__item:hover {
+    background: rgba(76, 201, 240, 0.12);
     color: var(--text-primary);
   }
   .shift-card__time {
@@ -317,11 +346,25 @@
                     <div class="shift-stack">
                       {% for s in shifts %}
                         {% if s.status == 'sick' or s.status == 'vacation' or s.status == 'day_off' %}
-                          <div class="shift-card shift-card--status">
+                          <div class="shift-card shift-card--status"
+                               data-shift-id="{{ s.id }}"
+                               data-status="{{ s.status }}"
+                               data-direction="{{ s.direction }}"
+                               data-start-hm="{{ s.start_hm }}"
+                               data-end-hm="{{ s.end_hm }}"
+                               data-activity="{{ s.activity|default_if_none:''|escape }}"
+                               data-comment="{{ s.comment|default_if_none:''|escape }}">
                             {{ s.status_label }}{% if s.activity %} · {{ s.activity }}{% endif %}{% if s.comment %} · {{ s.comment }}{% endif %}
                           </div>
                         {% elif s.status == 'work' %}
-                          <div class="shift-card shift-card--work">
+                          <div class="shift-card shift-card--work"
+                               data-shift-id="{{ s.id }}"
+                               data-status="{{ s.status }}"
+                               data-direction="{{ s.direction }}"
+                               data-start-hm="{{ s.start_hm }}"
+                               data-end-hm="{{ s.end_hm }}"
+                               data-activity="{{ s.activity|default_if_none:''|escape }}"
+                               data-comment="{{ s.comment|default_if_none:''|escape }}">
                             <span class="shift-card__direction">{{ s.direction_label }}</span>
                             <span class="shift-card__time">{{ s.time_label }}</span>
                             {% if s.activity or s.comment %}
@@ -331,7 +374,14 @@
                             {% endif %}
                           </div>
                         {% elif s.status == 'mentor' %}
-                          <div class="shift-card shift-card--other">
+                          <div class="shift-card shift-card--other"
+                               data-shift-id="{{ s.id }}"
+                               data-status="{{ s.status }}"
+                               data-direction="{{ s.direction }}"
+                               data-start-hm="{{ s.start_hm }}"
+                               data-end-hm="{{ s.end_hm }}"
+                               data-activity="{{ s.activity|default_if_none:''|escape }}"
+                               data-comment="{{ s.comment|default_if_none:''|escape }}">
                             <span class="shift-card__direction">{{ s.status_label }}</span>
                             <span class="shift-card__time">{{ s.time_label }}</span>
                             {% if s.activity or s.comment %}
@@ -341,7 +391,14 @@
                             {% endif %}
                           </div>
                         {% else %}
-                          <div class="shift-card shift-card--other">
+                          <div class="shift-card shift-card--other"
+                               data-shift-id="{{ s.id }}"
+                               data-status="{{ s.status }}"
+                               data-direction="{{ s.direction }}"
+                               data-start-hm="{{ s.start_hm }}"
+                               data-end-hm="{{ s.end_hm }}"
+                               data-activity="{{ s.activity|default_if_none:''|escape }}"
+                               data-comment="{{ s.comment|default_if_none:''|escape }}">
                             <span class="shift-card__direction">{{ s.direction_label }}</span>
                             <span class="shift-card__time">{{ s.time_label }}</span>
                             <span class="shift-card__meta">
@@ -368,6 +425,72 @@
   </div>
 </div>
 
+<!-- Context menu for shifts -->
+<div id="shiftContextMenu" class="shift-menu">
+  <button class="shift-menu__item" type="button" data-action="edit">
+    Редагувати зміну…
+  </button>
+  <!-- Future quick actions can be added here -->
+  <button class="shift-menu__item text-danger" type="button" data-action="close">
+    Закрити
+  </button>
+</div>
+
+<!-- Edit Shift Modal -->
+<div class="modal fade" id="editShiftModal" tabindex="-1" aria-labelledby="editShiftLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="editShiftLabel">Редагувати зміну</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <form id="editShiftForm">
+          <input type="hidden" name="shift_id" id="editShiftId">
+          <div class="row g-3">
+            <div class="col-6">
+              <label for="editShiftStart" class="form-label">Початок</label>
+              <input type="time" class="form-control" id="editShiftStart" name="start_time" step="300">
+            </div>
+            <div class="col-6">
+              <label for="editShiftEnd" class="form-label">Завершення</label>
+              <input type="time" class="form-control" id="editShiftEnd" name="end_time" step="300">
+            </div>
+            <div class="col-6">
+              <label for="editShiftStatus" class="form-label">Статус</label>
+              <select id="editShiftStatus" name="status" class="form-select">
+                {% for key,label in status_choices %}
+                  <option value="{{ key }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-6">
+              <label for="editShiftDirection" class="form-label">Напрямок</label>
+              <select id="editShiftDirection" name="direction" class="form-select">
+                {% for key,label in direction_choices %}
+                  <option value="{{ key }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12">
+              <label for="editShiftActivity" class="form-label">Активність</label>
+            </div>
+            <div class="col-12">
+              <label for="editShiftComment" class="form-label">Коментар</label>
+              <textarea class="form-control" id="editShiftComment" name="comment" rows="2"></textarea>
+            </div>
+          </div>
+        </form>
+        <div class="alert alert-danger d-none mt-3" id="editShiftError"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-soft" data-bs-dismiss="modal">Скасувати</button>
+        <button type="button" class="btn btn-accent" id="saveShiftBtn">Зберегти</button>
+      </div>
+    </div>
+  </div>
+  </div>
+
 <script>
 document.addEventListener('shown.bs.dropdown', function (e) {
   if (e.target && e.target.nextElementSibling && e.target.nextElementSibling.id === 'weeksDropdown') {
@@ -379,6 +502,178 @@ document.addEventListener('shown.bs.dropdown', function (e) {
     }
   }
 }, true);
+</script>
+
+<script>
+// Right-click context menu and edit modal logic
+document.addEventListener('DOMContentLoaded', function () {
+  const menu = document.getElementById('shiftContextMenu');
+  const editModalEl = document.getElementById('editShiftModal');
+  const bootstrapLib = window.bootstrap;
+
+  if (!menu || !editModalEl || !bootstrapLib || !bootstrapLib.Modal) {
+    return;
+  }
+
+  const editModal = bootstrapLib.Modal.getOrCreateInstance(editModalEl);
+  const saveBtn = document.getElementById('saveShiftBtn');
+  const form = document.getElementById('editShiftForm');
+  const errBox = document.getElementById('editShiftError');
+
+  function fillFormFields(data) {
+    if (!data) {
+      return;
+    }
+    document.getElementById('editShiftId').value = data.id || '';
+    if (data.status !== undefined) {
+      document.getElementById('editShiftStatus').value = data.status;
+    }
+    if (data.direction !== undefined) {
+      document.getElementById('editShiftDirection').value = data.direction;
+    }
+    if (data.start_time !== undefined) {
+      document.getElementById('editShiftStart').value = data.start_time;
+    }
+    if (data.end_time !== undefined) {
+      document.getElementById('editShiftEnd').value = data.end_time;
+    }
+    if (data.activity !== undefined) {
+      document.getElementById('editShiftActivity').value = data.activity;
+    }
+    if (data.comment !== undefined) {
+      document.getElementById('editShiftComment').value = data.comment;
+    }
+  }
+
+  async function fetchShiftDetails(shiftId) {
+    const resp = await fetch(`/ajax/shift/${shiftId}/edit/`, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' },
+      credentials: 'same-origin',
+    });
+    const payload = await resp.json().catch(() => ({}));
+    if (!resp.ok || !payload.ok) {
+      const msg = (payload && payload.error) ? payload.error : `Не вдалося отримати дані (${resp.status}).`;
+      throw new Error(msg);
+    }
+    return payload.shift;
+  }
+
+  function hideMenu() {
+    menu.style.display = 'none';
+  }
+  function showMenu(x, y) {
+    menu.style.left = x + 'px';
+    menu.style.top = y + 'px';
+    menu.style.display = 'block';
+  }
+  function getCookie(name) {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+  }
+
+  document.addEventListener('click', hideMenu);
+  document.addEventListener('scroll', hideMenu, true);
+  document.addEventListener('contextmenu', function (e) {
+    const card = e.target.closest('.shift-card[data-shift-id]');
+    if (!card) {
+      hideMenu();
+      return; // Let default context menu work elsewhere
+    }
+    e.preventDefault();
+    const id = card.getAttribute('data-shift-id');
+    menu.dataset.targetId = id;
+    // store initial data for modal
+    menu.dataset.initStatus = card.getAttribute('data-status') || '';
+    menu.dataset.initDirection = card.getAttribute('data-direction') || '';
+    menu.dataset.initStart = card.getAttribute('data-start-hm') || '';
+    menu.dataset.initEnd = card.getAttribute('data-end-hm') || '';
+    menu.dataset.initActivity = card.getAttribute('data-activity') || '';
+    menu.dataset.initComment = card.getAttribute('data-comment') || '';
+
+    const x = e.pageX;
+    const y = e.pageY;
+    showMenu(x, y);
+  });
+
+  menu.addEventListener('click', function (e) {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const action = btn.getAttribute('data-action');
+    if (action === 'edit') {
+      e.preventDefault();
+      e.stopPropagation();
+      hideMenu();
+      const fallbackData = {
+        id: menu.dataset.targetId || '',
+        status: menu.dataset.initStatus || '',
+        direction: menu.dataset.initDirection || '',
+        start_time: menu.dataset.initStart || '',
+        end_time: menu.dataset.initEnd || '',
+        activity: menu.dataset.initActivity || '',
+        comment: menu.dataset.initComment || '',
+      };
+      fillFormFields(fallbackData);
+      errBox.classList.add('d-none');
+      errBox.textContent = '';
+      setTimeout(() => editModal.show(), 0);
+      saveBtn.disabled = true;
+      fetchShiftDetails(fallbackData.id)
+        .then((data) => {
+          fillFormFields(data);
+          errBox.classList.add('d-none');
+          errBox.textContent = '';
+        })
+        .catch((err) => {
+          errBox.textContent = err.message || 'Не вдалося отримати актуальні дані зміни.';
+          errBox.classList.remove('d-none');
+        })
+        .finally(() => {
+          saveBtn.disabled = false;
+        });
+    } else if (action === 'close') {
+      hideMenu();
+    }
+  });
+
+  saveBtn.addEventListener('click', async function () {
+    const shiftId = document.getElementById('editShiftId').value;
+    const payload = {
+      status: document.getElementById('editShiftStatus').value,
+      direction: document.getElementById('editShiftDirection').value,
+      start_time: document.getElementById('editShiftStart').value,
+      end_time: document.getElementById('editShiftEnd').value,
+      activity: document.getElementById('editShiftActivity').value,
+      comment: document.getElementById('editShiftComment').value,
+    };
+    saveBtn.disabled = true;
+
+    try {
+      const resp = await fetch(`/ajax/shift/${shiftId}/edit/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCookie('csrftoken') || '',
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify(payload),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || !data.ok) {
+        const msg = (data && data.error) ? data.error : `Помилка збереження (${resp.status})`;
+        throw new Error(msg);
+      }
+      // Reload to reflect updates
+      window.location.reload();
+    } catch (err) {
+      errBox.textContent = err.message || 'Не вдалося зберегти зміну.';
+      errBox.classList.remove('d-none');
+    } finally {
+      saveBtn.disabled = false;
+    }
+  });
+});
 </script>
 
 {% endblock %}

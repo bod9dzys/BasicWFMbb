@@ -32,6 +32,7 @@ from core.views import (
     requests_view,
     request_sick_leave,
     upload_sick_leave_proof,
+    edit_shift_ajax,
 )
 
 
@@ -62,6 +63,7 @@ urlpatterns = [
     path("tools/", tools, name="tools"),
     path("exchange/", exchange_create, name="exchange_create"),
     path("ajax/get-agent-shifts/", get_agent_shifts_for_month, name="ajax_get_agent_shifts"),
+    path("ajax/shift/<int:shift_id>/edit/", edit_shift_ajax, name="ajax_edit_shift"),
 ]
 
 if settings.DEBUG:

@@ -4,6 +4,8 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Optional
 from io import BytesIO
+import json
+
 from django.utils import timezone
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import login, logout
@@ -36,11 +38,14 @@ VALID_DIRECTIONS = set(DIRECTION_LABELS.keys())
 
 @dataclass(slots=True)
 class ShiftCard:
+    id: int
     status: str
     status_label: str
     direction: str
     direction_label: str
     time_label: str
+    start_hm: str
+    end_hm: str
     activity: Optional[str]
     comment: Optional[str]
 
@@ -141,6 +146,7 @@ def schedule_week(request):
     filtered_qs = f.qs
     raw_shifts = list(
         filtered_qs.values(
+            "id",
             "agent_id",
             "start",
             "end",
@@ -187,6 +193,7 @@ def schedule_week(request):
                         activity = None
                 cells[idx].append(
                     ShiftCard(
+                        id=entry["id"],
                         status=entry["status"],
                         status_label=status_labels.get(entry["status"], entry["status"]),
                         direction=entry["direction"],
@@ -194,6 +201,8 @@ def schedule_week(request):
                             entry["direction"], entry["direction"]
                         ),
                         time_label=f"{local_start:%H:%M}–{local_end:%H:%M}",
+                        start_hm=f"{local_start:%H:%M}",
+                        end_hm=f"{local_end:%H:%M}",
                         activity=activity,
                         comment=comment,
                     )
@@ -225,8 +234,155 @@ def schedule_week(request):
         "weeks": weeks,
         "active_week_idx": active_idx,
         "week_param": active_param,
+        "status_choices": list(ShiftStatus.choices),
+        "direction_choices": list(Direction.choices),
     }
     return render(request, "schedule_week.html", ctx)
+
+
+@login_required
+def edit_shift_ajax(request, shift_id: int):
+    """Supports fetching and updating shift details via AJAX."""
+
+    # Fetch shift or 404
+    try:
+        shift = Shift.objects.select_related("agent", "agent__team_lead").get(pk=shift_id)
+    except Shift.DoesNotExist:
+        return JsonResponse({"ok": False, "error": "Shift not found"}, status=404)
+
+    user = request.user
+
+    def _user_can_edit() -> bool:
+        if user.is_superuser:
+            return True
+        if user.has_perm("core.change_shift"):
+            return True
+        if user.is_staff:
+            return True
+        agent = getattr(shift, "agent", None)
+        if agent and agent.team_lead_id and agent.team_lead_id == user.id:
+            return True
+        return False
+
+    tz = timezone.get_current_timezone()
+    start_local = timezone.localtime(shift.start, tz)
+    end_local = timezone.localtime(shift.end, tz)
+
+    if request.method == "GET":
+        # Anyone who can view the schedule already knows about this shift.
+        # Still, restrict to users allowed to edit to keep endpoint tight.
+        if not _user_can_edit():
+            return JsonResponse({"ok": False, "error": "Forbidden"}, status=403)
+
+        payload = {
+            "ok": True,
+            "shift": {
+                "id": shift.id,
+                "status": shift.status,
+                "direction": shift.direction,
+                "start_time": start_local.strftime("%H:%M"),
+                "end_time": end_local.strftime("%H:%M"),
+                "activity": shift.activity or "",
+                "comment": shift.comment or "",
+            },
+        }
+        return JsonResponse(payload)
+
+    if request.method != "POST":
+        return JsonResponse({"ok": False, "error": "Method not allowed"}, status=405)
+
+    if not _user_can_edit():
+        return JsonResponse({"ok": False, "error": "Forbidden"}, status=403)
+
+    # Parse data (JSON or form)
+    if request.content_type and "application/json" in request.content_type:
+        try:
+            data = json.loads(request.body.decode("utf-8")) if request.body else {}
+        except json.JSONDecodeError:
+            return JsonResponse({"ok": False, "error": "Invalid JSON"}, status=400)
+    else:
+        data = request.POST
+
+    updates = {}
+    status = data.get("status")
+    if status is not None and status != "":
+        valid_statuses = {k for k, _ in ShiftStatus.choices}
+        if status not in valid_statuses:
+            return JsonResponse({"ok": False, "error": "Invalid status"}, status=400)
+        updates["status"] = status
+
+    direction = data.get("direction")
+    if direction is not None and direction != "":
+        valid_dirs = {k for k, _ in Direction.choices}
+        if direction not in valid_dirs:
+            return JsonResponse({"ok": False, "error": "Invalid direction"}, status=400)
+        updates["direction"] = direction
+
+    if "activity" in data:
+        updates["activity"] = (data.get("activity") or "").strip()
+    if "comment" in data:
+        raw_comment = data.get("comment")
+        updates["comment"] = raw_comment if (raw_comment is None or isinstance(raw_comment, str)) else str(raw_comment)
+
+    start_time_str = data.get("start_time")
+    end_time_str = data.get("end_time")
+
+    def _parse_hm(hm: str):
+        try:
+            h, m = hm.split(":", 1)
+            return int(h), int(m)
+        except Exception:
+            return None
+
+    new_start_local = start_local
+    new_end_local = end_local
+    if start_time_str:
+        hm = _parse_hm(start_time_str)
+        if not hm or not (0 <= hm[0] < 24) or not (0 <= hm[1] < 60):
+            return JsonResponse({"ok": False, "error": "Invalid start_time"}, status=400)
+        new_start_local = start_local.replace(hour=hm[0], minute=hm[1], second=0, microsecond=0)
+    if end_time_str:
+        hm = _parse_hm(end_time_str)
+        if not hm or not (0 <= hm[0] < 24) or not (0 <= hm[1] < 60):
+            return JsonResponse({"ok": False, "error": "Invalid end_time"}, status=400)
+        same_day_end = new_start_local.replace(hour=hm[0], minute=hm[1], second=0, microsecond=0)
+        if same_day_end <= new_start_local:
+            same_day_end = same_day_end + timedelta(days=1)
+        new_end_local = same_day_end
+
+    if (start_time_str or end_time_str) and not (new_start_local < new_end_local):
+        return JsonResponse({"ok": False, "error": "Start must be before end"}, status=400)
+
+    if start_time_str or end_time_str:
+        updates["start"] = new_start_local
+        updates["end"] = new_end_local
+
+    if not updates:
+        return JsonResponse({"ok": True, "updated": False})
+
+    with transaction.atomic():
+        for field, value in updates.items():
+            setattr(shift, field, value)
+        shift.save(update_fields=list(updates.keys()))
+
+    refreshed_shift = Shift.objects.select_related("agent").get(pk=shift.pk)
+    start_local = timezone.localtime(refreshed_shift.start, tz)
+    end_local = timezone.localtime(refreshed_shift.end, tz)
+    response_payload = {
+        "ok": True,
+        "updated": True,
+        "shift": {
+            "id": refreshed_shift.id,
+            "status": refreshed_shift.status,
+            "direction": refreshed_shift.direction,
+            "start_time": start_local.strftime("%H:%M"),
+            "end_time": end_local.strftime("%H:%M"),
+            "activity": refreshed_shift.activity or "",
+            "comment": refreshed_shift.comment or "",
+        },
+    }
+
+    return JsonResponse(response_payload)
 
 
 def _prepare_agent_entries(shifts_qs, tz, window=None):
