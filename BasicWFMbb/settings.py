@@ -6,13 +6,15 @@ from pathlib import Path
 from dotenv import load_dotenv
 import dj_database_url
 import os
+from google.oauth2 import service_account
 
 # 1. Завантажуємо .env (це у вас працює)
 load_dotenv()
 
 # 2. Визначаємо BASE_DIR (це у вас працює)
 BASE_DIR = Path(__file__).resolve().parent.parent
-
+# 2.1. Визначаємо папку налаштувань
+SETTINGS_DIR = Path(__file__).resolve().parent
 
 # 3. Базові налаштування
 SECRET_KEY = os.environ.get(
@@ -40,47 +42,10 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 # -------------------------
 
 
-# ▼▼▼ КРИТИЧНИЙ БЛОК: МЕДІА-ФАЙЛИ (МАЄ БУТИ ДО INSTALLED_APPS) ▼▼▼
-GS_BUCKET_NAME = os.environ.get('GS_BUCKET_NAME')
-GCS_CREDENTIALS_FILE = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
-GCS_KEYFILE_PATH = None
-
-if GS_BUCKET_NAME and GCS_CREDENTIALS_FILE:
-    if not os.path.isabs(GCS_CREDENTIALS_FILE):
-        # Ваш лог показує, що файл лежить у папці /BasicWFMbb/, поруч з settings.py
-        GCS_KEYFILE_PATH = BASE_DIR / 'BasicWFMbb' / GCS_CREDENTIALS_FILE
-    else:
-        GCS_KEYFILE_PATH = Path(GCS_CREDENTIALS_FILE) # Для абсолютних шляхів
-
-    if GCS_KEYFILE_PATH and GCS_KEYFILE_PATH.exists():
-        print(f"!!! GCS INIT: Ключ знайдено: {GCS_KEYFILE_PATH}")
-        os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = str(GCS_KEYFILE_PATH)
-
-        # Встановлюємо сховище GCS
-        DEFAULT_FILE_STORAGE = 'storages.backends.gcloud.GoogleCloudStorage'
-        GS_DEFAULT_ACL = 'publicRead'
-        MEDIA_URL = f'https://storage.googleapis.com/{GS_BUCKET_NAME}/media/'
-        MEDIA_ROOT = 'media/'
-
-        # Новий діагностичний print
-        print(f"!!! GCS INIT: DEFAULT_FILE_STORAGE ВСТАНОВЛЕНО в 'GoogleCloudStorage'")
-    else:
-        print(f"!!! GCS INIT: ПОМИЛКА! Ключ не знайдено за шляхом: {GCS_KEYFILE_PATH}")
-        DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'
-        MEDIA_URL = 'media/'
-        MEDIA_ROOT = BASE_DIR / 'media'
-else:
-    print("!!! GCS INIT: GCS не налаштовано, використовую локальне сховище 'media/'.")
-    DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'
-    MEDIA_URL = 'media/'
-    MEDIA_ROOT = BASE_DIR / 'media'
-# -------------------------------
-# ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
 
 # Application definition
 # Django прочитає 'core' і завантажить models.py ТУТ,
-# тому DEFAULT_FILE_STORAGE вже має бути визначено.
+
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -89,6 +54,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
 
+    'storages',
     'core', # <--- Цей рядок завантажує core/models.py
 
     'crispy_forms',
@@ -97,8 +63,33 @@ INSTALLED_APPS = [
     'import_export',
     'simple_history',
 
-    'storages',
+
 ]
+
+GS_BUCKET_NAME = os.getenv("GS_BUCKET_NAME")
+GOOGLE_APPLICATION_CREDENTIALS_PATH = os.path.join(
+    BASE_DIR, os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "")
+)
+
+GS_CREDENTIALS = service_account.Credentials.from_service_account_file(
+    GOOGLE_APPLICATION_CREDENTIALS_PATH
+)
+
+STORAGES = {
+    "default": {
+        "BACKEND": "storages.backends.gcloud.GoogleCloudStorage",
+        "OPTIONS": {
+            "bucket_name": GS_BUCKET_NAME,
+            "credentials": GS_CREDENTIALS,
+        },
+    },
+    # якщо статичні файли локально — лишай так
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+}
+
+MEDIA_URL = f"https://storage.googleapis.com/{GS_BUCKET_NAME}/"
 
 CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap5"
 CRISPY_TEMPLATE_PACK = "bootstrap5"
