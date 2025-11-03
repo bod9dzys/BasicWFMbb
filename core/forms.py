@@ -1,9 +1,10 @@
 # core/forms.py
-from datetime import timedelta, datetime
+from datetime import datetime, timedelta
 
 from django import forms
 from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
 from django.contrib.auth.models import User
+from django.db.models import Q
 from django.utils import timezone
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Submit, Field, Layout
@@ -431,4 +432,107 @@ class DashboardFilterForm(forms.Form):
         end = cleaned.get("time_end")
         if start and end and start >= end:
             raise forms.ValidationError("Час початку має бути раніше за час завершення.")
+        return cleaned
+
+
+class SickLeaveRequestForm(forms.Form):
+    agent = forms.ModelChoiceField(
+        queryset=Agent.objects.none(),
+        label="Агент",
+        required=True,
+        empty_label=None,
+    )
+    start = forms.DateField(
+        label="Початок лікарняного (включно)",
+        widget=forms.DateInput(
+            attrs={
+                "type": "text",
+                "class": "form-control date-picker",
+                "placeholder": "Оберіть дату",
+                "autocomplete": "off",
+            }
+        ),
+        input_formats=["%Y-%m-%d"],
+        required=True,
+    )
+    end = forms.DateField(
+        label="Кінець лікарняного (включно)",
+        widget=forms.DateInput(
+            attrs={
+                "type": "text",
+                "class": "form-control date-picker",
+                "placeholder": "Оберіть дату",
+                "autocomplete": "off",
+            }
+        ),
+        input_formats=["%Y-%m-%d"],
+        required=True,
+    )
+    comment = forms.CharField(
+        label="Коментар",
+        widget=forms.Textarea(
+            attrs={
+                "class": "form-control",
+                "rows": 3,
+                "placeholder": "Додайте деталі за потреби",
+            }
+        ),
+        required=False,
+    )
+
+    def __init__(self, user, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.user = user
+        tz = timezone.get_current_timezone()
+        now_local = timezone.localtime(timezone.now(), tz)
+
+        base_qs = Agent.objects.select_related("user").filter(active=True)
+        if user.is_superuser or user.is_staff:
+            allowed_qs = base_qs
+        else:
+            filters = Q()
+            if hasattr(user, "agent"):
+                filters |= Q(pk=user.agent.pk)
+            filters |= Q(team_lead=user)
+            if filters:
+                allowed_qs = base_qs.filter(filters)
+            else:
+                allowed_qs = base_qs.none()
+
+        allowed_qs = allowed_qs.order_by("user__last_name", "user__first_name")
+        self.allowed_agents = allowed_qs
+        self.fields["agent"].queryset = allowed_qs
+        self.fields["agent"].widget.attrs.setdefault("class", "form-select")
+
+        if allowed_qs.count() == 1:
+            single_agent = allowed_qs.first()
+            self.fields["agent"].initial = single_agent
+            if not (user.is_staff or user.is_superuser):
+                self.fields["agent"].disabled = True
+
+        if not self.is_bound:
+            start_default = now_local.date()
+            end_default = start_default + timedelta(days=1)
+            self.initial["start"] = start_default.strftime("%Y-%m-%d")
+            self.initial["end"] = end_default.strftime("%Y-%m-%d")
+
+    def clean_agent(self):
+        agent = self.cleaned_data.get("agent")
+        if not self.allowed_agents.exists():
+            raise forms.ValidationError("У вас немає доступних агентів для запиту.")
+        if agent not in self.allowed_agents:
+            raise forms.ValidationError("Ви не можете створити запит для цього агента.")
+        return agent
+
+    def clean(self):
+        cleaned = super().clean()
+        start = cleaned.get("start")
+        end = cleaned.get("end")
+        if start and end and start > end:
+            raise forms.ValidationError("Дата початку має бути раніше або дорівнювати даті завершення.")
+
+        comment = cleaned.get("comment", "")
+        if comment:
+            cleaned["comment"] = comment.strip()
+
         return cleaned

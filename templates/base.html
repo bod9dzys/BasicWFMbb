@@ -395,7 +395,7 @@
               Розклад
             </a>
             <a href="{% url 'requests' %}"
-               class="nav-item-link {% if request.resolver_match.url_name == 'requests' %}active{% endif %}">
+               class="nav-item-link {% if request.resolver_match.url_name == 'requests' or request.resolver_match.url_name == 'requests_sick_leave' %}active{% endif %}">
               Запити
             </a>
             <a href="{% url 'dashboard' %}"
@@ -413,7 +413,7 @@
               Розклад
             </a>
             <a href="{% url 'requests' %}"
-               class="btn btn-soft btn-sm {% if request.resolver_match.url_name == 'requests' %}active{% endif %}">
+               class="btn btn-soft btn-sm {% if request.resolver_match.url_name == 'requests' or request.resolver_match.url_name == 'requests_sick_leave' %}active{% endif %}">
               Запити
             </a>
             <a href="{% url 'dashboard' %}"

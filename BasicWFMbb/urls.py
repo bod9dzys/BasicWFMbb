@@ -28,6 +28,7 @@ from core.views import (
     tools,
     dashboard,
     requests_view,
+    request_sick_leave,
 )
 
 
@@ -48,6 +49,7 @@ urlpatterns = [
     path("", schedule_week, name="home"),
     path("schedule/", schedule_week, name="schedule_week"),
     path("requests/", requests_view, name="requests"),
+    path("requests/sick-leave/", request_sick_leave, name="requests_sick_leave"),
     path("dashboard/", dashboard, name="dashboard"),
     path("tools/", tools, name="tools"),
     path("exchange/", exchange_create, name="exchange_create"),

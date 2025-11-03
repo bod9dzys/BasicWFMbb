@@ -1,5 +1,5 @@
 # core/views.py
-from datetime import timedelta, datetime
+from datetime import datetime, timedelta, time
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Optional
@@ -13,7 +13,13 @@ from django.db import transaction
 from django.http import JsonResponse, HttpResponse
 from .models import Shift, ShiftExchange, Agent, ShiftStatus, Direction
 from .filters import ShiftFilter
-from .forms import ExchangeCreateForm, SignUpForm, ToolsHoursForm, DashboardFilterForm
+from .forms import (
+    ExchangeCreateForm,
+    SignUpForm,
+    ToolsHoursForm,
+    DashboardFilterForm,
+    SickLeaveRequestForm,
+)
 from django.contrib import messages
 from .services import can_swap
 
@@ -364,6 +370,100 @@ def dashboard(request):
 @login_required
 def requests_view(request):
     return render(request, "requests.html")
+
+
+@login_required
+def request_sick_leave(request):
+    form = SickLeaveRequestForm(request.user, data=request.POST or None)
+    pending_confirmation = False
+    shifts_preview = []
+    time_range_label = ""
+    form_data = {}
+    agent_display = ""
+
+    if request.method == "POST" and form.is_valid():
+        agent = form.cleaned_data["agent"]
+        start_date = form.cleaned_data["start"]
+        end_date = form.cleaned_data["end"]
+        tz = timezone.get_current_timezone()
+        start = timezone.make_aware(datetime.combine(start_date, time.min), tz)
+        end = timezone.make_aware(datetime.combine(end_date + timedelta(days=1), time.min), tz)
+        comment = form.cleaned_data.get("comment") or ""
+        agent_display = agent.user.get_full_name() or agent.user.username
+
+        shifts_qs = Shift.objects.select_related("agent", "agent__user").filter(
+            agent=agent,
+            start__lt=end,
+            end__gt=start,
+        )
+
+        if not shifts_qs.exists():
+            form.add_error(None, "За вказаний період немає змін для оновлення.")
+        else:
+            confirm_state = request.POST.get("confirm")
+            if confirm_state == "yes":
+                note = f"[Лікарняний] {comment}" if comment else None
+                with transaction.atomic():
+                    locked_shifts = list(
+                        shifts_qs.select_for_update().order_by("start")
+                    )
+                    for shift in locked_shifts:
+                        shift.status = ShiftStatus.SICK
+                        update_fields = ["status"]
+                        if note:
+                            existing = (shift.comment or "").strip()
+                            if note not in existing:
+                                shift.comment = (
+                                    f"{existing}\n{note}".strip()
+                                    if existing
+                                    else note
+                                )
+                                update_fields.append("comment")
+                        shift.save(update_fields=update_fields)
+
+                messages.success(
+                    request,
+                    f"Зміни для {agent_display} з {start_date:%d.%m.%Y} до {end_date:%d.%m.%Y} позначено як лікарняний.",
+                )
+                return redirect("requests_sick_leave")
+            elif confirm_state == "no":
+                messages.info(request, "Запит на лікарняний скасовано.")
+                return redirect("requests_sick_leave")
+            else:
+                time_range_label = f"{start_date:%d.%m.%Y} – {end_date:%d.%m.%Y}"
+                shifts_preview = [
+                    {
+                        "start": timezone.localtime(shift.start, tz),
+                        "end": timezone.localtime(shift.end, tz),
+                        "direction": shift.get_direction_display(),
+                        "status": shift.get_status_display(),
+                    }
+                    for shift in shifts_qs.order_by("start")
+                ]
+                form_data = {
+                    key: value
+                    for key, value in request.POST.items()
+                    if key not in {"csrfmiddlewaretoken", "confirm"}
+                }
+                if "agent" not in form_data and form.cleaned_data.get("agent"):
+                    form_data["agent"] = str(form.cleaned_data["agent"].pk)
+                pending_confirmation = True
+
+    has_allowed_agents = getattr(form, "allowed_agents", Agent.objects.none()).exists()
+
+    return render(
+        request,
+        "requests_sick_leave.html",
+        {
+            "form": form,
+            "pending_confirmation": pending_confirmation,
+            "shifts_preview": shifts_preview,
+            "time_range_label": time_range_label,
+            "form_data": form_data,
+            "agent_display": agent_display,
+            "has_allowed_agents": has_allowed_agents,
+        },
+    )
 
 
 

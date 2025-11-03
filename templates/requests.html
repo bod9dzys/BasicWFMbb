@@ -3,11 +3,69 @@
 {% block title %}Запити{% endblock %}
 
 {% block content %}
-<div class="card glass-card p-5 text-center">
-  <span class="badge bg-light text-dark text-uppercase fw-semibold small px-3 py-2 mb-3">Запити</span>
-  <h1 class="h3 fw-semibold mb-3">Запити</h1>
-  <p class="lead mb-0 text-muted">
-    Under construction ... 👷🚧
-  </p>
+<style>
+  .requests-wrapper {
+    display: grid;
+    gap: 1.75rem;
+  }
+  .requests-grid {
+    display: grid;
+    gap: 1.25rem;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  }
+  .request-card {
+    border-radius: 1.2rem;
+    padding: 1.75rem;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 18px 36px rgba(15, 23, 42, 0.08);
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    text-decoration: none;
+    color: inherit;
+  }
+  .request-card:hover,
+  .request-card:focus {
+    transform: translateY(-2px);
+    box-shadow: 0 22px 44px rgba(15, 23, 42, 0.12);
+    text-decoration: none;
+  }
+  .request-card__label {
+    font-size: 0.75rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: rgba(15, 23, 42, 0.6);
+    margin-bottom: 0;
+  }
+  .request-card__title {
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin-bottom: 0;
+  }
+  .request-card__meta {
+    font-size: 0.92rem;
+    color: rgba(15, 23, 42, 0.68);
+  }
+</style>
+
+<div class="requests-wrapper">
+  <div class="card glass-card p-5 text-center">
+    <h1 class="h3 fw-semibold mb-3">Запити</h1>
+    <p class="lead mb-0 text-muted">
+      Оберіть тип запиту нижче, щоб продовжити.
+    </p>
+  </div>
+
+  <div class="requests-grid">
+    <a href="{% url 'requests_sick_leave' %}" class="request-card">
+      <span class="request-card__label">Нове</span>
+      <span class="request-card__title">Запит на лікарняний</span>
+      <p class="request-card__meta mb-0">
+        Позначте зміни як лікарняний для себе або агентів своєї команди.
+      </p>
+    </a>
+  </div>
 </div>
 {% endblock %}
