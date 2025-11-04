@@ -7,7 +7,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.contrib.auth.hashers import make_password
 from django.utils.text import slugify
 from django.db import transaction
-from import_export.exceptions import SkipRow
+from import_export.results import SkipRow
 from import_export.instance_loaders import CachedInstanceLoader
 from import_export.widgets import DateTimeWidget
 
