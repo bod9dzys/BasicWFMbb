@@ -48,8 +48,8 @@ class ShiftResource(resources.ModelResource):
 
     class Meta:
         model = Shift
-        fields = ('id', 'agent', 'team_lead', 'start', 'end', 'direction', 'status', 'activity', 'comment')
-        export_order = ('id', 'agent', 'team_lead', 'start', 'end', 'direction', 'status', 'activity', 'comment')
+        fields = ('id', 'agent', 'team_lead', 'start', 'end', 'direction', 'status')
+        export_order = ('id', 'agent', 'team_lead', 'start', 'end', 'direction', 'status')
         import_id_fields = ('id',)  # ДИВ. пункт 4 нижче щодо альтернативи
         skip_unchanged = True
         report_skipped = False
@@ -134,8 +134,7 @@ class ShiftResource(resources.ModelResource):
 
         # Нормалізуємо напрямок (direction) з урахуванням активності
         current_direction = row.get('direction')
-        activity_hint = row.get('activity')
-        row['direction'] = self._normalize_direction(current_direction, activity_hint)
+        row['direction'] = self._normalize_direction(current_direction)
 
         # Гармонізуємо статуси, щоб приймати різні варіанти написання
         row['status'] = self._normalize_status(row.get('status'))
@@ -194,12 +193,11 @@ class ShiftResource(resources.ModelResource):
         return candidate
 
     @staticmethod
-    def _normalize_direction(direction_value, activity_value=None):
+    def _normalize_direction(direction_value):
         def _clean(value):
             return " ".join(str(value).strip().split()) if value else ""
 
         label = _clean(direction_value)
-        fallback = _clean(activity_value)
         normalized = label.casefold()
 
         if normalized in {"calls", "tickets", "chats"}:
@@ -211,18 +209,6 @@ class ShiftResource(resources.ModelResource):
                 return mapped
             print(f"ПОПЕРЕДЖЕННЯ: невідомий напрям '{label}'. Використовую значення за замовчуванням '{DEFAULT_DIRECTION}'.")
             return DEFAULT_DIRECTION
-
-        # Якщо direction порожній - пробуємо activity
-        fallback_normalized = fallback.casefold()
-        if fallback_normalized in {"calls", "tickets", "chats"}:
-            return fallback_normalized
-
-        mapped = UKRAINIAN_DIRECTION_MAP.get(fallback_normalized)
-        if mapped:
-            return mapped
-
-        if fallback:
-            print(f"ПОПЕРЕДЖЕННЯ: невідома активність '{fallback}'. Використовую значення за замовчуванням '{DEFAULT_DIRECTION}'.")
 
         return DEFAULT_DIRECTION
 
