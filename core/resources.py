@@ -4,10 +4,8 @@ from import_export.widgets import ForeignKeyWidget, Widget
 from .models import Shift, ShiftExchange, Agent, ShiftStatus
 from django.contrib.auth.models import User, Group, Permission
 from django.contrib.contenttypes.models import ContentType
-from django.contrib.auth.hashers import make_password
 from django.utils.text import slugify
 from django.db import transaction
-from import_export.results import SkipRow
 from import_export.instance_loaders import CachedInstanceLoader
 from import_export.widgets import DateTimeWidget
 
@@ -68,69 +66,113 @@ class ShiftResource(resources.ModelResource):
         self._agent_cache.clear()
         self._team_lead_cache.clear()
         self._agent_team_lead_map = {}
+        # Яку колонку використовуємо як ідентифікатор агента
+        self._agent_header = 'agent'
+        self._agent_header_is_id_alias = False
 
-        # Перевіряємо, що файл має потрібні колонки
-        if 'agent' not in dataset.headers:
-            raise ValueError("Колонка 'agent' відсутня у файлі.")
-        if 'team_lead' not in dataset.headers:
-            # не обов'язково для імпорту змін, але тримаємо перевірку для сумісності
-            print("ПОПЕРЕДЖЕННЯ: колонка 'team_lead' відсутня. Пропускаю перевірку TL.")
-
-        # Швидке визначення індексів колонок і збір унікальних імен агентів
+        # Перевіряємо, що файл має колонку агента: 'agent' або допускаємо 'id' як Agent ID alias
         headers = list(getattr(dataset, 'headers', []) or [])
         if not headers:
             raise ValueError("Порожні заголовки файлу імпорту.")
-        try:
-            idx_agent = headers.index('agent')
-        except ValueError:
-            raise ValueError("Колонка 'agent' відсутня у файлі.")
-
-        normalized_needed = set()
-        for row in dataset:
+        if 'agent' in headers:
+            self._agent_header = 'agent'
+        elif 'id' in headers:
+            # Трактуємо 'id' як ідентифікатор агента у файлі, а id зміни буде автогенерований
+            self._agent_header = 'id'
+            self._agent_header_is_id_alias = True
+        else:
+            raise ValueError("Колонка 'agent' відсутня у файлі (або використайте колонку 'id' з ID агента).")
+        if 'team_lead' not in headers:
+            # не обов'язково для імпорту змін, але тримаємо перевірку для сумісності
+            print("ПОПЕРЕДЖЕННЯ: колонка 'team_lead' відсутня. Пропускаю перевірку TL.")
+        # Якщо колонка агента — це ім'я ('agent'), будуємо кеш імен → ID
+        if self._agent_header == 'agent':
             try:
-                raw_name = row[idx_agent]
-            except Exception:
-                continue
-            if not raw_name:
-                continue
-            normalized = self._normalize_name(raw_name)
-            if normalized:
-                normalized_needed.add(normalized)
+                idx_agent = headers.index('agent')
+            except ValueError:
+                raise ValueError("Колонка 'agent' відсутня у файлі.")
 
-        # Синхронізуємо з існуючими агентами
-        matched_existing = 0
-        qs = (Agent.objects.select_related('user')
-              .only('id', 'user__first_name', 'user__last_name', 'user__username')
-              .iterator(chunk_size=2000))
-        for agent in qs:
-            display_name = self._clean_display_name(agent.user.get_full_name() or agent.user.username)
-            normalized = self._normalize_name(display_name)
-            if normalized in normalized_needed and normalized not in self._agent_cache:
-                self._agent_cache[normalized] = agent.pk
-                matched_existing += 1
+            normalized_needed = set()
+            for row in dataset:
+                try:
+                    raw_name = row[idx_agent]
+                except Exception:
+                    continue
+                if not raw_name:
+                    continue
+                normalized = self._normalize_name(raw_name)
+                if normalized:
+                    normalized_needed.add(normalized)
 
-        if matched_existing:
-            print(f"Знайдено {matched_existing} агентів у базі для імпорту змін.")
+            # Синхронізуємо з існуючими агентами
+            matched_existing = 0
+            qs = (Agent.objects.select_related('user')
+                  .only('id', 'user__first_name', 'user__last_name', 'user__username')
+                  .iterator(chunk_size=2000))
+            for agent in qs:
+                display_name = self._clean_display_name(agent.user.get_full_name() or agent.user.username)
+                normalized = self._normalize_name(display_name)
+                if normalized in normalized_needed and normalized not in self._agent_cache:
+                    self._agent_cache[normalized] = agent.pk
+                    matched_existing += 1
 
-        missing = normalized_needed - set(self._agent_cache.keys())
-        if missing:
-            print(f"ПОПЕРЕДЖЕННЯ: {len(missing)} агентів з файлу відсутні у системі. Ці рядки буде пропущено при імпорті розкладу.")
+            if matched_existing:
+                print(f"Знайдено {matched_existing} агентів у базі для імпорту змін.")
+
+            missing = normalized_needed - set(self._agent_cache.keys())
+            if missing:
+                print(f"ПОПЕРЕДЖЕННЯ: {len(missing)} агентів з файлу відсутні у системі. Ці рядки буде пропущено при імпорті розкладу.")
 
     def before_import_row(self, row, row_number=None, **kwargs):
         """
         Підставляє ID агента з кешу в колонку 'agent' для ForeignKeyWidget.
         """
-        # Читаємо оригінальне значення імені агента, що прийшло із CSV
-        name = row.get('agent') # Доступ до оригінального значення колонки 'agent'
-        normalized = self._normalize_name(name)
-        if normalized and normalized in self._agent_cache:
-            # Замінюємо значення в колонці 'agent' на ID
-            row['agent'] = self._agent_cache[normalized]
-        elif normalized and normalized not in self._agent_cache:
-            print(f"ПОМИЛКА в рядку {row_number}: Не знайдено ID для агента '{name}' у кеші!")
-            raise SkipRow(f"Agent '{name}' не існує")
-        elif not normalized:
-            raise SkipRow("Порожнє ім'я агента")
+        # Читаємо значення агента (ім'я або ID). Допускаємо alias 'id' як Agent ID.
+        raw_agent = row.get('agent') if self._agent_header == 'agent' else row.get('id')
+
+        # 1) Якщо файл уже містить числовий ID агента — використовуємо його як є
+        if raw_agent is not None:
+            try:
+                # Дозволяємо як int, так і рядок з числом
+                agent_id = int(str(raw_agent).strip())
+                if agent_id > 0:
+                    row['agent'] = agent_id
+                    # Продовжуємо нормалізацію інших полів нижче
+                else:
+                    raise ValueError
+            except (ValueError, TypeError):
+                # Не число — обробляємо як ім'я і мапимо на кешований ID
+                name = raw_agent
+                normalized = self._normalize_name(name)
+                if normalized and normalized in self._agent_cache:
+                    row['agent'] = self._agent_cache[normalized]
+                elif normalized and normalized not in self._agent_cache:
+                    print(f"ПОМИЛКА в рядку {row_number}: Не знайдено ID для агента '{name}' у кеші!")
+                    row['_skip_row_reason'] = f"Agent '{name}' не існує"
+                    return
+                else:
+                    row['_skip_row_reason'] = "Порожнє ім'я агента"
+                    return
+        else:
+            row['_skip_row_reason'] = "Відсутня колонка 'agent'"
+            return
+
+        # Якщо використовували alias 'id' як агент — приберемо 'id', щоб не трактувати як ID зміни
+        if self._agent_header_is_id_alias and 'id' in row:
+            try:
+                del row['id']
+            except Exception:
+                pass
+
+        # Якщо у рядку agent — числовий ID, перевіримо, що Agent існує
+        try:
+            candidate_id = int(row.get('agent'))
+            if candidate_id > 0 and not Agent.objects.filter(pk=candidate_id).exists():
+                print(f"ПОМИЛКА в рядку {row_number}: Agent ID='{candidate_id}' не існує у системі.")
+                row['_skip_row_reason'] = f"Agent ID '{candidate_id}' не існує"
+                return
+        except Exception:
+            pass
 
         # Нормалізуємо напрямок (direction) з урахуванням активності
         current_direction = row.get('direction')
@@ -267,6 +309,15 @@ class ShiftResource(resources.ModelResource):
         display = tl.get_full_name() or tl.username
         return self._clean_display_name(display)
 
+    def skip_row(self, instance, original, row, import_validation_errors=None):
+        """Пропускає рядок, якщо у before_import_row він був позначений як такий, що підлягає пропуску."""
+        reason = row.get('_skip_row_reason')
+        if reason:
+            # За потреби можна зберегти reason у лог
+            return True
+        # Повертаємо стандартну логіку пропуску (наприклад, skip_unchanged)
+        return super().skip_row(instance, original, row, import_validation_errors=import_validation_errors)
+
     @staticmethod
     def _ensure_tl_group_permissions(group: Group):
         """
@@ -316,12 +367,6 @@ class ShiftResource(resources.ModelResource):
 
 
 class UsersFromScheduleResource(resources.ModelResource):
-    """
-    ОКРЕМИЙ імпорт користувачів (агенти та тімліди) з того ж файлу, що і розклад.
-    - Створює відсутніх User/Agent
-    - Створює відсутніх тімлідів (User з групою TL) і призначає їх агентам
-    - НЕ створює жодних Shift
-    """
 
     # Читаємо сирі значення з колонок, але не записуємо їх у модель напряму
     agent_display = fields.Field(column_name='agent', attribute='agent_display', widget=SimpleReadWidget(), readonly=True)
@@ -345,11 +390,28 @@ class UsersFromScheduleResource(resources.ModelResource):
 
         idx_agent = headers.index('agent')
         idx_tl = headers.index('team_lead')
+        # Необов'язкові ідентифікатори з файлу
+        # Підтримуємо кілька alias-ів для ідентифікаторів
+        def _idx(*names):
+            for n in names:
+                try:
+                    return headers.index(n)
+                except ValueError:
+                    continue
+            return None
+
+        idx_agent_id = _idx('agent_id', 'id')  # 'id' як alias для Agent.id
+        idx_agent_user_id = _idx('agent_user_id', 'user_id')
+        idx_tl_user_id = _idx('team_lead_id', 'team_lead_user_id', 'tl_user_id', 'tl_id')
 
         # Підготовка нормалізованих імен без дублювання пам'яті
         normalized_to_original = {}
         normalized_agent_to_tl = {}
         normalized_team_leads = {}
+        # Мапи бажаних ідентифікаторів з файлу (за нормалізованим ім'ям)
+        desired_agent_id_by_norm = {}
+        desired_agent_user_id_by_norm = {}
+        desired_tl_user_id_by_norm = {}
         for row in dataset:
             try:
                 raw_agent = row[idx_agent]
@@ -366,6 +428,27 @@ class UsersFromScheduleResource(resources.ModelResource):
             if tl_norm:
                 normalized_agent_to_tl[agent_norm] = tl_norm
                 normalized_team_leads.setdefault(tl_norm, ShiftResource._clean_display_name(raw_tl))
+
+            # Зчитуємо бажані ID, якщо є відповідні колонки
+            def _to_int(val):
+                try:
+                    v = int(str(val).strip())
+                    return v if v > 0 else None
+                except Exception:
+                    return None
+
+            if idx_agent_id is not None:
+                desired = _to_int(row[idx_agent_id])
+                if desired:
+                    desired_agent_id_by_norm.setdefault(agent_norm, desired)
+            if idx_agent_user_id is not None:
+                desired = _to_int(row[idx_agent_user_id])
+                if desired:
+                    desired_agent_user_id_by_norm.setdefault(agent_norm, desired)
+            if tl_norm and idx_tl_user_id is not None:
+                desired = _to_int(row[idx_tl_user_id])
+                if desired:
+                    desired_tl_user_id_by_norm.setdefault(tl_norm, desired)
 
         print(f"[Імпорт користувачів] Агенти у файлі: {len(normalized_to_original)} | Тімліди: {len(normalized_team_leads)}")
 
@@ -393,14 +476,21 @@ class UsersFromScheduleResource(resources.ModelResource):
                         first, last = ShiftResource._split_name(original)
                         base = slugify(original, allow_unicode=True).replace('-', '_') or 'tl'
                         username = ShiftResource._allocate_username(base, per_base_cache)
-                        user = User.objects.create(
+                        desired_uid = desired_tl_user_id_by_norm.get(norm)
+                        # Якщо у файлі задано бажаний ID користувача — спробуємо його використати
+                        create_kwargs = dict(
                             username=username,
                             first_name=first,
                             last_name=last,
-                            password=make_password('temp_password123'),
                             is_staff=True,
                             is_active=True,
                         )
+                        if desired_uid and not User.objects.filter(pk=desired_uid).exists():
+                            create_kwargs['id'] = desired_uid
+                        user = User.objects.create(**create_kwargs)
+                        user.set_unusable_password()
+                        user.save(update_fields=['password'])
+
                         user.groups.add(tl_group)
                         tl_cache[norm] = user.pk
                 print(f"[Імпорт користувачів] Готово тімлідів: {len(tl_cache)}")
@@ -417,15 +507,25 @@ class UsersFromScheduleResource(resources.ModelResource):
                 first, last = ShiftResource._split_name(original)
                 base = slugify(original, allow_unicode=True).replace('-', '_') or 'agent'
                 username = ShiftResource._allocate_username(base, per_base_cache)
-                user = User.objects.create(
+                desired_user_id = desired_agent_user_id_by_norm.get(norm)
+                user_create_kwargs = dict(
                     username=username,
                     first_name=first,
                     last_name=last,
-                    password=make_password('temp_password123'),
                     is_staff=False,
                     is_active=True,
                 )
-                agent = Agent.objects.create(user=user)
+                if desired_user_id and not User.objects.filter(pk=desired_user_id).exists():
+                    user_create_kwargs['id'] = desired_user_id
+                user = User.objects.create(**user_create_kwargs)
+                user.set_unusable_password()
+                user.save(update_fields=['password'])
+                # Можемо також встановити бажаний ID агента, якщо задано
+                desired_agent_id = desired_agent_id_by_norm.get(norm)
+                if desired_agent_id and not Agent.objects.filter(pk=desired_agent_id).exists():
+                    agent = Agent.objects.create(id=desired_agent_id, user=user)
+                else:
+                    agent = Agent.objects.create(user=user)
                 agent_cache[norm] = agent.pk
 
             if new_agents:
@@ -445,7 +545,12 @@ class UsersFromScheduleResource(resources.ModelResource):
 
     def before_import_row(self, row, row_number=None, **kwargs):
         # Увесь запис зроблено в before_import. Рядки не записуємо принципово.
-        raise SkipRow("UsersFromScheduleResource: пропуск рядка, запис не виконується")
+        # Позначаємо рядок як такий, що треба пропустити.
+        row['_skip_row_reason'] = "UsersFromScheduleResource: пропуск рядка, запис не виконується"
+
+    def skip_row(self, instance, original, row, import_validation_errors=None):
+        # Пропускаємо усі рядки для цього ресурсу
+        return True
 
     # Підтримка експорту (не обов'язково, але корисно):
     def dehydrate_agent_display(self, obj):

@@ -9,7 +9,7 @@ from .resources import ShiftResource, UsersFromScheduleResource  # додано 
 class AgentAdmin(ImportExportModelAdmin):
     # Окремий імпорт користувачів (агенти та тімліди) з того ж файлу, що й розклад
     resource_class = UsersFromScheduleResource
-    list_display = ("user", "team_lead", "active")
+    list_display = ("id", "user", "user_id_display", "team_lead", "active")
     list_filter = ("active", "team_lead")
     search_fields = (
         "user__username",
@@ -17,6 +17,16 @@ class AgentAdmin(ImportExportModelAdmin):
         "user__last_name",
         "user__email",
     )
+
+    readonly_fields = ("agent_id_display", "user_id_display")
+
+    def user_id_display(self, obj):
+        return obj.user_id
+    user_id_display.short_description = "User ID"
+
+    def agent_id_display(self, obj):
+        return obj.id
+    agent_id_display.short_description = "Agent ID"
 
 
 @admin.register(Shift)

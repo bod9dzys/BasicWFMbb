@@ -36,6 +36,10 @@ class Command(BaseCommand):
         agent_original_by_norm: Dict[str, str] = {}
         tl_original_by_norm: Dict[str, str] = {}
         agent_to_tl: Dict[str, str] = {}
+        # Optional IDs supplied in CSV
+        agent_id_by_norm: Dict[str, int] = {}
+        agent_user_id_by_norm: Dict[str, int] = {}
+        tl_user_id_by_norm: Dict[str, int] = {}
 
         with csv_path.open("r", encoding="utf-8-sig", newline="") as f:
             reader = csv.DictReader(f, delimiter=delimiter)
@@ -44,6 +48,13 @@ class Command(BaseCommand):
                 raise CommandError("CSV must contain 'agent' header")
             if "team_lead" not in headers:
                 raise CommandError("CSV must contain 'team_lead' header")
+            # optional id columns (with aliases)
+            def _has(*names):
+                return any(n in headers for n in names)
+
+            has_agent_id = _has("agent_id", "id")             # 'id' treated as Agent.id in this importer
+            has_agent_user_id = _has("agent_user_id", "user_id")
+            has_tl_user_id = _has("team_lead_id", "team_lead_user_id", "tl_id", "tl_user_id")
             for row in reader:
                 a_raw = (row.get("agent") or "").strip()
                 if not a_raw:
@@ -59,6 +70,27 @@ class Command(BaseCommand):
                     tls_needed.add(tl_norm)
                     tl_original_by_norm.setdefault(tl_norm, ShiftResource._clean_display_name(tl_raw))
                     agent_to_tl[a_norm] = tl_norm
+
+                # parse optional IDs
+                def _to_int(v):
+                    try:
+                        i = int(str(v).strip())
+                        return i if i > 0 else None
+                    except Exception:
+                        return None
+
+                if has_agent_id:
+                    desired = _to_int(row.get("agent_id") or row.get("id"))
+                    if desired:
+                        agent_id_by_norm.setdefault(a_norm, desired)
+                if has_agent_user_id:
+                    desired = _to_int(row.get("agent_user_id") or row.get("user_id"))
+                    if desired:
+                        agent_user_id_by_norm.setdefault(a_norm, desired)
+                if tl_norm and has_tl_user_id:
+                    desired = _to_int(row.get("team_lead_id") or row.get("team_lead_user_id") or row.get("tl_id") or row.get("tl_user_id"))
+                    if desired:
+                        tl_user_id_by_norm.setdefault(tl_norm, desired)
 
         self.stdout.write(self.style.NOTICE(f"[users] unique agents in file: {len(agents_needed)}; TLs: {len(tls_needed)}"))
 
@@ -96,7 +128,8 @@ class Command(BaseCommand):
                 first, last = ShiftResource._split_name(original)
                 base = slugify(original, allow_unicode=True).replace('-', '_') or 'tl'
                 username = ShiftResource._allocate_username(base, per_base_cache)
-                u = User.objects.create(
+                desired_uid = tl_user_id_by_norm.get(norm)
+                create_kwargs = dict(
                     username=username,
                     first_name=first,
                     last_name=last,
@@ -104,6 +137,9 @@ class Command(BaseCommand):
                     is_staff=True,
                     is_active=True,
                 )
+                if desired_uid and not User.objects.filter(pk=desired_uid).exists():
+                    create_kwargs['id'] = desired_uid
+                u = User.objects.create(**create_kwargs)
                 u.groups.add(tl_group)
                 user_display_to_id[norm] = u.pk
                 created_tl_users[norm] = u.pk
@@ -125,13 +161,24 @@ class Command(BaseCommand):
                 first, last = ShiftResource._split_name(original)
                 base = slugify(original, allow_unicode=True).replace('-', '_') or 'agent'
                 username = ShiftResource._allocate_username(base, per_base_cache)
-                user_objs.append(User(
-                    username=username,
-                    first_name=first,
-                    last_name=last,
-                    password=make_password('temp_password123'),
-                    is_active=True,
-                ))
+                desired_uid = agent_user_id_by_norm.get(norm)
+                if desired_uid and not User.objects.filter(pk=desired_uid).exists():
+                    user_objs.append(User(
+                        id=desired_uid,
+                        username=username,
+                        first_name=first,
+                        last_name=last,
+                        password=make_password('temp_password123'),
+                        is_active=True,
+                    ))
+                else:
+                    user_objs.append(User(
+                        username=username,
+                        first_name=first,
+                        last_name=last,
+                        password=make_password('temp_password123'),
+                        is_active=True,
+                    ))
                 created_usernames.append(username)
                 if len(user_objs) >= batch_size:
                     created_users = User.objects.bulk_create(user_objs, batch_size=batch_size)
@@ -149,7 +196,11 @@ class Command(BaseCommand):
             for norm in new_agent_norms:
                 uid = user_display_to_id.get(norm)
                 if uid:
-                    agent_objs.append(Agent(user_id=uid))
+                    desired_aid = agent_id_by_norm.get(norm)
+                    if desired_aid and not Agent.objects.filter(pk=desired_aid).exists():
+                        agent_objs.append(Agent(id=desired_aid, user_id=uid))
+                    else:
+                        agent_objs.append(Agent(user_id=uid))
                 if len(agent_objs) >= batch_size:
                     Agent.objects.bulk_create(agent_objs, batch_size=batch_size)
                     agent_objs.clear()
