@@ -6,6 +6,7 @@ from django.contrib.auth.models import User, Group, Permission
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.auth.hashers import make_password
 from django.utils.text import slugify
+from django.db import transaction
 
 UKRAINIAN_DIRECTION_MAP = {
     "дзвінки": "calls",
@@ -63,126 +64,69 @@ class ShiftResource(resources.ModelResource):
         # Вказуємо порядок для експорту (без тимчасового поля)
         export_order = ('id', 'agent', 'team_lead', 'start', 'end', 'direction', 'status', 'activity', 'comment')
         import_id_fields = ('id',)
+        # Продуктивність імпорту
         skip_unchanged = True
-        report_skipped = False # Показувати пропущені рядки може бути корисно для відладки
-        # Важливо: Не намагатися створити об'єкти Agent через віджет ForeignKeyWidget
-        # Ми робимо це вручну в before_import
-        clean_model_instances = True # Дозволяє before_import_row модифікувати дані рядка
+        report_skipped = False  # менше логів під час великих імпортів
+        use_bulk = True         # швидший запис (bulk_create/bulk_update)
+        batch_size = 1000       # контроль розміру пачок
+        skip_diff = True        # не обчислювати diff для пришвидшення
+        clean_model_instances = False # не викликати full_clean під час імпорту
 
     def before_import(self, dataset, using_transactions=None, dry_run=False, **kwargs):
         """
-        Знаходить або створює всіх User/Agent ОДИН РАЗ перед імпортом.
-        Заповнює кеш _agent_cache = {normalized_name: agent_id}.
+        ПІСЛЯ РОЗДІЛЕННЯ ПРОЦЕСІВ: імпорт розкладу НЕ створює користувачів/тімлідів.
+        Тут лише будуємо кеш агентів, що ВЖЕ існують, і попереджаємо про відсутніх.
         """
         self._agent_cache.clear()
         self._team_lead_cache.clear()
         self._agent_team_lead_map = {}
 
-        # Використовуємо 'agent' як назву колонки для отримання імен
+        # Перевіряємо, що файл має потрібні колонки
         if 'agent' not in dataset.headers:
-            raise ValueError("Колонка 'agent' відсутня у CSV файлі.")
+            raise ValueError("Колонка 'agent' відсутня у файлі.")
         if 'team_lead' not in dataset.headers:
-            raise ValueError("Колонка 'team_lead' відсутня у CSV файлі.")
+            # не обов'язково для імпорту змін, але тримаємо перевірку для сумісності
+            print("ПОПЕРЕДЖЕННЯ: колонка 'team_lead' відсутня. Пропускаю перевірку TL.")
 
-        # Збираємо унікальні імена та пам'ятаємо оригінальний запис
-        normalized_to_original = {}
-        normalized_agent_to_tl = {}
-        normalized_team_leads = {}
-        for row in dataset.dict:
-            raw_name = row.get('agent')
+        # Швидке визначення індексів колонок і збір унікальних імен агентів
+        headers = list(getattr(dataset, 'headers', []) or [])
+        if not headers:
+            raise ValueError("Порожні заголовки файлу імпорту.")
+        try:
+            idx_agent = headers.index('agent')
+        except ValueError:
+            raise ValueError("Колонка 'agent' відсутня у файлі.")
+
+        normalized_needed = set()
+        for row in dataset:
+            try:
+                raw_name = row[idx_agent]
+            except Exception:
+                continue
             if not raw_name:
                 continue
             normalized = self._normalize_name(raw_name)
             if normalized:
-                normalized_to_original.setdefault(normalized, self._clean_display_name(raw_name))
-                raw_tl = row.get('team_lead')
-                tl_normalized = self._normalize_name(raw_tl)
-                if tl_normalized:
-                    normalized_agent_to_tl[normalized] = tl_normalized
-                    normalized_team_leads.setdefault(tl_normalized, self._clean_display_name(raw_tl))
+                normalized_needed.add(normalized)
 
-        print(f"Знайдено {len(normalized_to_original)} унікальних імен агентів у файлі.")
-        print(f"Знайдено {len(normalized_team_leads)} унікальних тімлідів у файлі.")
-
-        normalized_names = set(normalized_to_original.keys())
-
-        # Забезпечуємо наявність тімлідів
-        taken_usernames = set(User.objects.values_list('username', flat=True))
-        tl_group, _ = Group.objects.get_or_create(name="TL")
-        self._ensure_tl_group_permissions(tl_group)
-
-        if normalized_team_leads:
-            for user in User.objects.all():
-                display_name = self._clean_display_name(user.get_full_name() or user.username)
-                normalized = self._normalize_name(display_name)
-                if normalized in normalized_team_leads and normalized not in self._team_lead_cache:
-                    self._team_lead_cache[normalized] = user.pk
-
-            new_tl_names = set(normalized_team_leads.keys()) - set(self._team_lead_cache.keys())
-            for normalized in new_tl_names:
-                original_name = normalized_team_leads[normalized]
-                first_name, last_name = self._split_name(original_name)
-                username = self._generate_username(original_name, taken_usernames)
-                user = User.objects.create(
-                    username=username,
-                    first_name=first_name,
-                    last_name=last_name,
-                    password=make_password('temp_password123'),
-                    is_staff=True,
-                    is_active=True,
-                )
-                user.groups.add(tl_group)
-                self._team_lead_cache[normalized] = user.pk
-
-            print(f"Підготовлено {len(self._team_lead_cache)} тімлідів для призначення.")
-
-        # Підтягнемо вже існуючих агентів за іменами
+        # Синхронізуємо з існуючими агентами
         matched_existing = 0
-        for agent in Agent.objects.select_related('user').all():
+        qs = (Agent.objects.select_related('user')
+              .only('id', 'user__first_name', 'user__last_name', 'user__username')
+              .iterator(chunk_size=2000))
+        for agent in qs:
             display_name = self._clean_display_name(agent.user.get_full_name() or agent.user.username)
             normalized = self._normalize_name(display_name)
-            if normalized in normalized_names:
+            if normalized in normalized_needed and normalized not in self._agent_cache:
                 self._agent_cache[normalized] = agent.pk
                 matched_existing += 1
 
-        print(f"Знайдено {matched_existing} агентів у базі.")
+        if matched_existing:
+            print(f"Знайдено {matched_existing} агентів у базі для імпорту змін.")
 
-        # Визначаємо нові імена, для яких потрібно створити користувача та агента
-        new_normalized_names = normalized_names - set(self._agent_cache.keys())
-        print(f"Створюємо {len(new_normalized_names)} нових агентів.")
-
-        for normalized in new_normalized_names:
-            original_name = normalized_to_original[normalized]
-            first_name, last_name = self._split_name(original_name)
-            username = self._generate_username(original_name, taken_usernames)
-            user = User.objects.create(
-                username=username,
-                first_name=first_name,
-                last_name=last_name,
-                password=make_password('temp_password123'),
-                is_staff=False,
-                is_active=True,
-            )
-            agent = Agent.objects.create(user=user)
-            self._agent_cache[normalized] = agent.pk
-
-        print("Кеш агентів підготовлено.")
-        self._agent_team_lead_map = normalized_agent_to_tl
-
-        # Призначаємо тімлідів агентам (існуючим та новим)
-        assignments_done = 0
-        for agent_normalized, tl_normalized in self._agent_team_lead_map.items():
-            agent_id = self._agent_cache.get(agent_normalized)
-            tl_id = self._team_lead_cache.get(tl_normalized)
-            if agent_id and tl_id:
-                updated = Agent.objects.filter(pk=agent_id).exclude(team_lead_id=tl_id).update(team_lead_id=tl_id)
-                if updated:
-                    assignments_done += 1
-            elif agent_id and not tl_id:
-                print(f"ПОПЕРЕДЖЕННЯ: не знайдено тімліда '{normalized_team_leads.get(tl_normalized, tl_normalized)}' для агента з ім'ям '{normalized_to_original.get(agent_normalized, agent_normalized)}'.")
-
-        if assignments_done:
-            print(f"Оновлено тімліда для {assignments_done} агентів.")
+        missing = normalized_needed - set(self._agent_cache.keys())
+        if missing:
+            print(f"ПОПЕРЕДЖЕННЯ: {len(missing)} агентів з файлу відсутні у системі. Ці рядки буде пропущено при імпорті розкладу.")
 
     def before_import_row(self, row, row_number=None, **kwargs):
         """
@@ -217,11 +161,17 @@ class ShiftResource(resources.ModelResource):
         # Гармонізуємо статуси, щоб приймати різні варіанти написання
         row['status'] = self._normalize_status(row.get('status'))
 
-        # Переконуємось, що зазначений тімлід існує
+        # Перевіряємо тімліда лише для попередження (без автостворення)
         tl_display = row.get('team_lead')
         tl_normalized = self._normalize_name(tl_display)
-        if tl_normalized and tl_normalized not in self._team_lead_cache:
-            print(f"ПОПЕРЕДЖЕННЯ: тімліда '{tl_display}' не вдалося знайти або створити. Перевірте дані файлу.")
+        if tl_normalized:
+            # Ледачо наповнюємо кеш існуючих користувачів без тримання всього QuerySet у пам'яті
+            if not self._team_lead_cache:
+                for user in User.objects.only('first_name', 'last_name', 'username').iterator(chunk_size=2000):
+                    display_name = self._clean_display_name(user.get_full_name() or user.username)
+                    self._team_lead_cache[self._normalize_name(display_name)] = user.pk
+            if tl_normalized not in self._team_lead_cache:
+                print(f"ПОПЕРЕДЖЕННЯ: тімліда '{tl_display}' не знайдено в системі. Імпорт розкладу не створює користувачів.")
 
 
     # Можна видалити цей метод, якщо він був у попередній версії
@@ -373,3 +323,171 @@ class ShiftResource(resources.ModelResource):
 
         if to_add:
             group.permissions.add(*to_add)
+
+    @staticmethod
+    def _allocate_username(base: str, per_base_cache: dict) -> str:
+        """Повертає вільний username з префіксом base, мінімізуючи запити і пам'ять.
+        - per_base_cache: дикт base -> set усіх зайнятих імен (тільки для цього base)
+        - запит у БД робиться лише перший раз для кожного base
+        """
+        if not base:
+            base = 'user'
+        base = base.strip()
+        used = per_base_cache.get(base)
+        if used is None:
+            # отримуємо наявні юзернейми лише для цього префіксу
+            existing = set(User.objects.filter(username__startswith=base)
+                           .values_list('username', flat=True))
+            used = existing
+            per_base_cache[base] = used
+        # підбір кандидата
+        candidate = base
+        suffix = 1
+        while candidate in used:
+            candidate = f"{base}_{suffix}"
+            suffix += 1
+        used.add(candidate)
+        return candidate
+
+
+class UsersFromScheduleResource(resources.ModelResource):
+    """
+    ОКРЕМИЙ імпорт користувачів (агенти та тімліди) з того ж файлу, що і розклад.
+    - Створює відсутніх User/Agent
+    - Створює відсутніх тімлідів (User з групою TL) і призначає їх агентам
+    - НЕ створює жодних Shift
+    """
+
+    # Читаємо сирі значення з колонок, але не записуємо їх у модель напряму
+    agent_display = fields.Field(column_name='agent', attribute='agent_display', widget=SimpleReadWidget(), readonly=True)
+    team_lead_display = fields.Field(column_name='team_lead', attribute='team_lead_display', widget=SimpleReadWidget(), readonly=True)
+
+    class Meta:
+        model = Agent
+        fields = ('agent_display', 'team_lead_display',)
+        import_id_fields = ()
+        skip_unchanged = True
+        report_skipped = False
+
+    def before_import(self, dataset, using_transactions=None, dry_run=False, **kwargs):
+        headers = list(getattr(dataset, 'headers', []) or [])
+        if not headers:
+            raise ValueError("Порожні заголовки файлу імпорту.")
+        if 'agent' not in headers:
+            raise ValueError("Колонка 'agent' відсутня у файлі.")
+        if 'team_lead' not in headers:
+            raise ValueError("Колонка 'team_lead' відсутня у файлі.")
+
+        idx_agent = headers.index('agent')
+        idx_tl = headers.index('team_lead')
+
+        # Підготовка нормалізованих імен без дублювання пам'яті
+        normalized_to_original = {}
+        normalized_agent_to_tl = {}
+        normalized_team_leads = {}
+        for row in dataset:
+            try:
+                raw_agent = row[idx_agent]
+            except Exception:
+                continue
+            if not raw_agent:
+                continue
+            agent_norm = ShiftResource._normalize_name(raw_agent)
+            if not agent_norm:
+                continue
+            normalized_to_original.setdefault(agent_norm, ShiftResource._clean_display_name(raw_agent))
+            raw_tl = row[idx_tl] if idx_tl is not None else None
+            tl_norm = ShiftResource._normalize_name(raw_tl)
+            if tl_norm:
+                normalized_agent_to_tl[agent_norm] = tl_norm
+                normalized_team_leads.setdefault(tl_norm, ShiftResource._clean_display_name(raw_tl))
+
+        print(f"[Імпорт користувачів] Агенти у файлі: {len(normalized_to_original)} | Тімліди: {len(normalized_team_leads)}")
+
+        # Створюємо структури лише для потрібних баз юзернеймів
+        per_base_cache = {}
+
+        with transaction.atomic():
+            # Підтверджуємо/створюємо тім-лідів
+            tl_cache = {}
+            if normalized_team_leads:
+                # вже існуючі — ітеруємо без кешу пам'яті
+                for user in User.objects.only('first_name', 'last_name', 'username').iterator(chunk_size=2000):
+                    display = ShiftResource._clean_display_name(user.get_full_name() or user.username)
+                    norm = ShiftResource._normalize_name(display)
+                    if norm in normalized_team_leads and norm not in tl_cache:
+                        tl_cache[norm] = user.pk
+
+                # створюємо нових
+                new_tl = set(normalized_team_leads.keys()) - set(tl_cache.keys())
+                if new_tl:
+                    tl_group, _ = Group.objects.get_or_create(name="TL")
+                    ShiftResource._ensure_tl_group_permissions(tl_group)
+                    for norm in new_tl:
+                        original = normalized_team_leads[norm]
+                        first, last = ShiftResource._split_name(original)
+                        base = slugify(original, allow_unicode=True).replace('-', '_') or 'tl'
+                        username = ShiftResource._allocate_username(base, per_base_cache)
+                        user = User.objects.create(
+                            username=username,
+                            first_name=first,
+                            last_name=last,
+                            password=make_password('temp_password123'),
+                            is_staff=True,
+                            is_active=True,
+                        )
+                        user.groups.add(tl_group)
+                        tl_cache[norm] = user.pk
+                print(f"[Імпорт користувачів] Готово тімлідів: {len(tl_cache)}")
+
+            # Підтверджуємо/створюємо агентів
+            agent_cache = {}
+            for agent in Agent.objects.select_related('user').only('id', 'user__first_name', 'user__last_name', 'user__username').iterator(chunk_size=2000):
+                display = ShiftResource._clean_display_name(agent.user.get_full_name() or agent.user.username)
+                agent_cache[ShiftResource._normalize_name(display)] = agent.pk
+
+            new_agents = set(normalized_to_original.keys()) - set(agent_cache.keys())
+            for norm in new_agents:
+                original = normalized_to_original[norm]
+                first, last = ShiftResource._split_name(original)
+                base = slugify(original, allow_unicode=True).replace('-', '_') or 'agent'
+                username = ShiftResource._allocate_username(base, per_base_cache)
+                user = User.objects.create(
+                    username=username,
+                    first_name=first,
+                    last_name=last,
+                    password=make_password('temp_password123'),
+                    is_staff=False,
+                    is_active=True,
+                )
+                agent = Agent.objects.create(user=user)
+                agent_cache[norm] = agent.pk
+
+            if new_agents:
+                print(f"[Імпорт користувачів] Створено нових агентів: {len(new_agents)}")
+
+            # Призначаємо тім-лідів
+            assigned = 0
+            for agent_norm, tl_norm in normalized_agent_to_tl.items():
+                agent_id = agent_cache.get(agent_norm)
+                tl_id = tl_cache.get(tl_norm)
+                if agent_id and tl_id:
+                    updated = Agent.objects.filter(pk=agent_id).exclude(team_lead_id=tl_id).update(team_lead_id=tl_id)
+                    if updated:
+                        assigned += 1
+            if assigned:
+                print(f"[Імпорт користувачів] Оновлено тім-ліда для {assigned} агентів")
+
+    def before_import_row(self, row, row_number=None, **kwargs):
+        # Ми все зробили у before_import. Рядки пропускаємо, щоб уникнути спроб запису ModelResource.
+        kwargs['skip_row'] = True
+
+    # Підтримка експорту (не обов'язково, але корисно):
+    def dehydrate_agent_display(self, obj):
+        return ShiftResource._clean_display_name(obj.user.get_full_name() or obj.user.username)
+
+    def dehydrate_team_lead_display(self, obj):
+        tl = getattr(obj, 'team_lead', None)
+        if not tl:
+            return ""
+        return ShiftResource._clean_display_name(tl.get_full_name() or tl.username)

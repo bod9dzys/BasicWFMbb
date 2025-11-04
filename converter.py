@@ -2,6 +2,7 @@
 import csv
 import re
 from datetime import datetime, time, timedelta
+from typing import Tuple, Optional, List
 
 import openpyxl
 from openpyxl import Workbook
@@ -45,10 +46,24 @@ STATUS_MAP = {
 }
 
 # Спеціальні текстові мітки для статусу/активності
-SPECIAL_ACTIVITY_MAP = {"ментор": ("mentor", "Ментор"),!}
+SPECIAL_ACTIVITY_MAP = {
+    "ментор": ("mentor", "Ментор"),
+    "менторство": ("mentor", "Ментор"),
+    "mentor": ("mentor", "Ментор"),
+}
 
-# Назви колонок - ДОДАНО 'team_lead'
-HEADERS = ["id", "agent", "team_lead", "start", "end", "direction", "status", "activity", "comment"]
+# Назви колонок - ДОДАНО 'team_lead' і 'activity' для узгодженості з виводом
+HEADERS = [
+    "id",
+    "agent",
+    "team_lead",
+    "start",
+    "end",
+    "direction",
+    "status",
+    "activity",
+    "comment",
+]
 
 
 # =========================
@@ -175,6 +190,31 @@ class OutputWriter:
 # =========================
 # 4) ОСНОВНА ЛОГІКА
 # =========================
+TIME_RANGE_RE = re.compile(r"^\s*(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2}|24:00)\s*$")
+
+
+def _parse_time_range_on_date(range_str: str, date_obj) -> Tuple[datetime, datetime]:
+    """Парсить один інтервал часу 'HH:MM - HH:MM|24:00' в рамках конкретної дати.
+
+    Повертає (start_dt, end_dt) з урахуванням переходу через північ.
+    """
+    m = TIME_RANGE_RE.match(range_str)
+    if not m:
+        raise ValueError(f"Невірний формат часу '{range_str}'. Очікується 'HH:MM-HH:MM'.")
+
+    start_str, end_str = m.groups()
+    h_start, m_start = map(int, start_str.split(":"))
+    start_dt = datetime.combine(date_obj, time(h_start, m_start))
+
+    if end_str == "24:00":
+        end_dt = datetime.combine(date_obj + timedelta(days=1), time(0, 0))
+    else:
+        h_end, m_end = map(int, end_str.split(":"))
+        end_dt = datetime.combine(date_obj, time(h_end, m_end))
+
+    if end_dt <= start_dt:
+        end_dt += timedelta(days=1)
+    return start_dt, end_dt
 def convert_schedule_xlsx(input_path, output_basename, sheet_name=None, output_format="xlsx"):
     print(f"Відкриваю XLSX файл: {input_path}...")
 
@@ -284,10 +324,30 @@ def convert_schedule_xlsx(input_path, output_basename, sheet_name=None, output_f
                 special_status = None
                 special_activity_text = ""
 
+                # Спочатку перевіримо, чи це кілька часових інтервалів через кому
+                # Наприклад: "12:00 - 13:00, 22:00 - 23:00"
+                segments = [seg.strip() for seg in shift_raw.split(",") if seg.strip()]
+                time_segments = [seg for seg in segments if TIME_RANGE_RE.match(seg)]
+                multiple_pure_time_ranges = len(time_segments) >= 2 and len(time_segments) == len(segments)
+
                 if shift_raw in STATUS_MAP:
                     out["status"] = STATUS_MAP[shift_raw]
                     start_dt = datetime.combine(date_obj, time(0, 0))
                     end_dt = start_dt + timedelta(days=1)
+                elif multiple_pure_time_ranges:
+                    # Кілька часових інтервалів у межах одного дня — створюємо кілька змін
+                    for seg in time_segments:
+                        try:
+                            start_dt, end_dt = _parse_time_range_on_date(seg, date_obj)
+                        except ValueError as e:
+                            raise
+                        row = dict(out)
+                        row["start"] = start_dt
+                        row["end"] = end_dt
+                        writer.write_row(row)
+                        processed_shifts += 1
+                    # Перейти до наступної клітинки
+                    continue
                 elif ',' in shift_raw:
                     time_part, activity_part = shift_raw.split(',', 1)
                     time_part = time_part.strip()
@@ -302,45 +362,17 @@ def convert_schedule_xlsx(input_path, output_basename, sheet_name=None, output_f
                     else:
                         out["activity"] = activity_part
 
-                    time_parts = time_part.split('-')
-                    if len(time_parts) == 2:
-                        start_str, end_str = map(str.strip, time_parts)
-                        try:
-                             h_start, m_start = map(int, start_str.split(':'))
-                             start_dt = datetime.combine(date_obj, time(h_start, m_start))
-
-                             if end_str == "24:00":
-                                 end_dt = datetime.combine(date_obj + timedelta(days=1), time(0, 0))
-                             else:
-                                 h_end, m_end = map(int, end_str.split(':'))
-                                 end_dt = datetime.combine(date_obj, time(h_end, m_end))
-
-                             if end_dt <= start_dt:
-                                 end_dt += timedelta(days=1)
-                        except ValueError:
-                             raise ValueError(f"Невірний формат часу '{time_part}' у записі з комою.")
-                    else:
+                    try:
+                        start_dt, end_dt = _parse_time_range_on_date(time_part, date_obj)
+                    except ValueError:
                         raise ValueError(f"Невірний формат часу '{time_part}' у записі з комою.")
                 else:
-                    parts = shift_raw.split("-")
-                    if len(parts) == 2:
-                        start_str, end_str = map(str.strip, parts)
-                        try:
-                             h_start, m_start = map(int, start_str.split(':'))
-                             start_dt = datetime.combine(date_obj, time(h_start, m_start))
-
-                             if end_str == "24:00":
-                                 end_dt = datetime.combine(date_obj + timedelta(days=1), time(0, 0))
-                             else:
-                                 h_end, m_end = map(int, end_str.split(':'))
-                                 end_dt = datetime.combine(date_obj, time(h_end, m_end))
-
-                             if end_dt <= start_dt:
-                                 end_dt += timedelta(days=1)
-                        except ValueError:
-                             raise ValueError(f"Невірний формат часу '{shift_raw}'. Очікується 'HH:MM-HH:MM'.")
-                    else:
+                    # Окремий часовий інтервал без коми
+                    try:
+                        start_dt, end_dt = _parse_time_range_on_date(shift_raw, date_obj)
+                    except ValueError:
                         raise ValueError(f"Невідомий формат значення '{shift_raw}'. Очікується статус, 'HH:MM-HH:MM' або 'HH:MM-HH:MM, Текст'.")
+
 
                 if start_dt and end_dt:
                     out["start"] = start_dt

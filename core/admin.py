@@ -2,11 +2,13 @@
 from django.contrib import admin
 from import_export.admin import ImportExportModelAdmin
 from .models import Agent, Shift, ShiftExchange, AuditLog
-from .resources import ShiftResource  # <--- 1. ДОДАЙТЕ ЦЕЙ ІМПОРТ
+from .resources import ShiftResource, UsersFromScheduleResource  # додано імпорт ресурсу користувачів
 
 
 @admin.register(Agent)
-class AgentAdmin(admin.ModelAdmin):
+class AgentAdmin(ImportExportModelAdmin):
+    # Окремий імпорт користувачів (агенти та тімліди) з того ж файлу, що й розклад
+    resource_class = UsersFromScheduleResource
     list_display = ("user", "team_lead", "active")
     list_filter = ("active", "team_lead")
     search_fields = (
