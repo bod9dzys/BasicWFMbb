@@ -7,8 +7,8 @@ from django.contrib.contenttypes.models import ContentType
 from django.utils.text import slugify
 from django.db import transaction
 from import_export.instance_loaders import CachedInstanceLoader
+# Видалено імпорти сигналів та аудиту - вони більше не потрібні
 from import_export.widgets import DateTimeWidget
-
 
 UKRAINIAN_DIRECTION_MAP = {
     "дзвінки": "calls",
@@ -17,18 +17,20 @@ UKRAINIAN_DIRECTION_MAP = {
 }
 DEFAULT_DIRECTION = "calls"
 
+
 # Допоміжний віджет, щоб просто читати значення без перетворень
 class SimpleReadWidget(Widget):
     def clean(self, value, row=None, *args, **kwargs):
         return value
 
+
 class ShiftResource(resources.ModelResource):
     # Поле для зв'язку Shift -> Agent.
     # Воно читатиме колонку 'agent' з CSV, але очікуватиме ID після обробки в before_import_row.
     agent = fields.Field(
-        column_name='agent', # Назва колонки в CSV
-        attribute='agent',   # Атрибут моделі Shift
-        widget=ForeignKeyWidget(Agent, 'pk') # Шукаємо Agent за ID (pk)
+        column_name='agent',  # Назва колонки в CSV
+        attribute='agent',  # Атрибут моделі Shift
+        widget=ForeignKeyWidget(Agent, 'pk')  # Шукаємо Agent за ID (pk)
     )
     team_lead = fields.Field(
         column_name='team_lead',
@@ -36,8 +38,6 @@ class ShiftResource(resources.ModelResource):
         widget=SimpleReadWidget(),
         readonly=True
     )
-
-
 
     # Словник для кешування агентів {normalized_name: agent_id}
     _agent_cache = {}
@@ -49,7 +49,19 @@ class ShiftResource(resources.ModelResource):
         fields = ('id', 'agent', 'team_lead', 'start', 'end', 'direction', 'status')
         export_order = ('id', 'agent', 'team_lead', 'start', 'end', 'direction', 'status')
         import_id_fields = ('id',)  # ДИВ. пункт 4 нижче щодо альтернативи
-        skip_unchanged = True
+
+        # --- ОПТИМІЗАЦІЯ ---
+
+        # 1. Повністю вимикає сигнали (pre_save, post_save).
+        # Це автоматично вимкне і simple-history, і ваш core.audit.
+        skip_signals = True
+
+        # 2. Вимикає перевірку "чи змінився рядок".
+        # Це прибирає один SELECT-запит НА КОЖЕН рядок у файлі.
+        skip_unchanged = False
+
+        # --- ---------------- ---
+
         report_skipped = False
         use_bulk = True
         batch_size = 1000
@@ -60,6 +72,7 @@ class ShiftResource(resources.ModelResource):
 
     def before_import(self, dataset, using_transactions=None, dry_run=False, **kwargs):
         """
+        (ЦЕ ВАШ ОРИГІНАЛЬНИЙ МЕТОД, ВІН ПРАЦЮВАТИМЕ)
         ПІСЛЯ РОЗДІЛЕННЯ ПРОЦЕСІВ: імпорт розкладу НЕ створює користувачів/тімлідів.
         Тут лише будуємо кеш агентів, що ВЖЕ існують, і попереджаємо про відсутніх.
         """
@@ -69,6 +82,10 @@ class ShiftResource(resources.ModelResource):
         # Яку колонку використовуємо як ідентифікатор агента
         self._agent_header = 'agent'
         self._agent_header_is_id_alias = False
+        # Набори для швидких перевірок існування агентів
+        self._agent_ids_needed = set()
+        self._agent_ids_existing = set()
+        self._reported_missing_agent_ids = set()
 
         # Перевіряємо, що файл має колонку агента: 'agent' або допускаємо 'id' як Agent ID alias
         headers = list(getattr(dataset, 'headers', []) or [])
@@ -121,13 +138,44 @@ class ShiftResource(resources.ModelResource):
 
             missing = normalized_needed - set(self._agent_cache.keys())
             if missing:
-                print(f"ПОПЕРЕДЖЕННЯ: {len(missing)} агентів з файлу відсутні у системі. Ці рядки буде пропущено при імпорті розкладу.")
+                print(
+                    f"ПОПЕРЕДЖЕННЯ: {len(missing)} агентів з файлу відсутні у системі. Ці рядки буде пропущено при імпорті розкладу.")
+        else:
+            # Колонка агента — це alias 'id' з Agent ID: зберемо унікальні ID та підтвердимо їх існування одним запитом
+            try:
+                idx_id = headers.index('id')
+            except ValueError:
+                idx_id = None
+            if idx_id is not None:
+                needed = set()
+                for row in dataset:
+                    try:
+                        raw = row[idx_id]
+                    except Exception:
+                        continue
+                    if raw is None or raw == "":
+                        continue
+                    try:
+                        val = int(str(raw).strip())
+                        if val > 0:
+                            needed.add(val)
+                    except Exception:
+                        # некоректний ID — ігноруємо тут, відфільтруємо в before_import_row
+                        continue
+                self._agent_ids_needed = needed
+                if needed:
+                    existing = set(Agent.objects.filter(id__in=needed).values_list('id', flat=True))
+                    self._agent_ids_existing = existing
+                    missing_ids = needed - existing
+                    if missing_ids:
+                        print(f"ПОПЕРЕДЖЕННЯ: {len(missing_ids)} Agent ID відсутні у системі (приклад: {sorted(list(missing_ids))[:5]}). Такі рядки буде пропущено.")
 
     def before_import_row(self, row, row_number=None, **kwargs):
         """
         Підставляє ID агента з кешу в колонку 'agent' для ForeignKeyWidget.
         """
         # Читаємо значення агента (ім'я або ID). Допускаємо alias 'id' як Agent ID.
+        # Використовуємо self._agent_header, який тепер коректно встановлюється у before_import
         raw_agent = row.get('agent') if self._agent_header == 'agent' else row.get('id')
 
         # 1) Якщо файл уже містить числовий ID агента — використовуємо його як є
@@ -164,13 +212,16 @@ class ShiftResource(resources.ModelResource):
             except Exception:
                 pass
 
-        # Якщо у рядку agent — числовий ID, перевіримо, що Agent існує
+        # Якщо у рядку agent — числовий ID, перевіримо, що Agent існує без запиту на рядок
         try:
             candidate_id = int(row.get('agent'))
-            if candidate_id > 0 and not Agent.objects.filter(pk=candidate_id).exists():
-                print(f"ПОМИЛКА в рядку {row_number}: Agent ID='{candidate_id}' не існує у системі.")
-                row['_skip_row_reason'] = f"Agent ID '{candidate_id}' не існує"
-                return
+            if candidate_id > 0 and self._agent_ids_existing:
+                if candidate_id not in self._agent_ids_existing:
+                    if candidate_id not in self._reported_missing_agent_ids:
+                        print(f"ПОМИЛКА: Agent ID='{candidate_id}' не існує у системі (рядок {row_number}). Рядок буде пропущено.")
+                        self._reported_missing_agent_ids.add(candidate_id)
+                    row['_skip_row_reason'] = f"Agent ID '{candidate_id}' не існує"
+                    return
         except Exception:
             pass
 
@@ -191,8 +242,8 @@ class ShiftResource(resources.ModelResource):
                     display_name = self._clean_display_name(user.get_full_name() or user.username)
                     self._team_lead_cache[self._normalize_name(display_name)] = user.pk
             if tl_normalized not in self._team_lead_cache:
-                print(f"ПОПЕРЕДЖЕННЯ: тімліда '{tl_display}' не знайдено в системі. Імпорт розкладу не створює користувачів.")
-
+                print(
+                    f"ПОПЕРЕДЖЕННЯ: тімліда '{tl_display}' не знайдено в системі. Імпорт розкладу не створює користувачів.")
 
     # Можна видалити цей метод, якщо він був у попередній версії
     # def after_import_row(self, row, row_result, **kwargs):
@@ -249,7 +300,8 @@ class ShiftResource(resources.ModelResource):
             mapped = UKRAINIAN_DIRECTION_MAP.get(normalized)
             if mapped:
                 return mapped
-            print(f"ПОПЕРЕДЖЕННЯ: невідомий напрям '{label}'. Використовую значення за замовчуванням '{DEFAULT_DIRECTION}'.")
+            print(
+                f"ПОПЕРЕДЖЕННЯ: невідомий напрям '{label}'. Використовую значення за замовчуванням '{DEFAULT_DIRECTION}'.")
             return DEFAULT_DIRECTION
 
         return DEFAULT_DIRECTION
@@ -315,7 +367,7 @@ class ShiftResource(resources.ModelResource):
         if reason:
             # За потреби можна зберегти reason у лог
             return True
-        # Повертаємо стандартну логіку пропуску (наприклад, skip_unchanged)
+        # Повертаємо стандартну логіку пропуску (наприклад, skip_unchanged=False тепер обробляється тут)
         return super().skip_row(instance, original, row, import_validation_errors=import_validation_errors)
 
     @staticmethod
@@ -367,10 +419,11 @@ class ShiftResource(resources.ModelResource):
 
 
 class UsersFromScheduleResource(resources.ModelResource):
-
     # Читаємо сирі значення з колонок, але не записуємо їх у модель напряму
-    agent_display = fields.Field(column_name='agent', attribute='agent_display', widget=SimpleReadWidget(), readonly=True)
-    team_lead_display = fields.Field(column_name='team_lead', attribute='team_lead_display', widget=SimpleReadWidget(), readonly=True)
+    agent_display = fields.Field(column_name='agent', attribute='agent_display', widget=SimpleReadWidget(),
+                                 readonly=True)
+    team_lead_display = fields.Field(column_name='team_lead', attribute='team_lead_display', widget=SimpleReadWidget(),
+                                     readonly=True)
 
     class Meta:
         model = Agent
@@ -390,6 +443,7 @@ class UsersFromScheduleResource(resources.ModelResource):
 
         idx_agent = headers.index('agent')
         idx_tl = headers.index('team_lead')
+
         # Необов'язкові ідентифікатори з файлу
         # Підтримуємо кілька alias-ів для ідентифікаторів
         def _idx(*names):
@@ -450,7 +504,8 @@ class UsersFromScheduleResource(resources.ModelResource):
                 if desired:
                     desired_tl_user_id_by_norm.setdefault(tl_norm, desired)
 
-        print(f"[Імпорт користувачів] Агенти у файлі: {len(normalized_to_original)} | Тімліди: {len(normalized_team_leads)}")
+        print(
+            f"[Імпорт користувачів] Агенти у файлі: {len(normalized_to_original)} | Тімліди: {len(normalized_team_leads)}")
 
         # Створюємо структури лише для потрібних баз юзернеймів
         per_base_cache = {}
@@ -497,7 +552,8 @@ class UsersFromScheduleResource(resources.ModelResource):
 
             # Підтверджуємо/створюємо агентів
             agent_cache = {}
-            for agent in Agent.objects.select_related('user').only('id', 'user__first_name', 'user__last_name', 'user__username').iterator(chunk_size=2000):
+            for agent in Agent.objects.select_related('user').only('id', 'user__first_name', 'user__last_name',
+                                                                   'user__username').iterator(chunk_size=2000):
                 display = ShiftResource._clean_display_name(agent.user.get_full_name() or agent.user.username)
                 agent_cache[ShiftResource._normalize_name(display)] = agent.pk
 
