@@ -7,19 +7,15 @@ from django.contrib.contenttypes.models import ContentType
 from django.contrib.auth.hashers import make_password
 from django.utils.text import slugify
 from django.db import transaction
+from import_export.exceptions import SkipRow
+from import_export.instance_loaders import CachedInstanceLoader
+from import_export.widgets import DateTimeWidget
+
 
 UKRAINIAN_DIRECTION_MAP = {
     "дзвінки": "calls",
-    "дзінки": "calls",
-    "дзвонки": "calls",
-    "кіл-центр": "calls",
     "тікети": "tickets",
-    "тикети": "tickets",
-    "tickets": "tickets",
     "чати": "chats",
-    "чат": "chats",
-    "соцмережі": "chats",
-    "чати/соцмережі": "chats",
 }
 DEFAULT_DIRECTION = "calls"
 
@@ -42,15 +38,8 @@ class ShiftResource(resources.ModelResource):
         widget=SimpleReadWidget(),
         readonly=True
     )
-    # Тимчасове поле, щоб прочитати оригінальний username з CSV ДО того,
-    # як before_import_row замінить значення 'agent' на ID.
-    # Ми не хочемо, щоб це поле записувалось у модель Shift.
-    original_agent_name = fields.Field(
-        column_name='agent',
-        attribute='original_agent_name', # Просто тимчасовий атрибут на рівні ресурсу
-        widget=SimpleReadWidget(), # Просто читаємо рядок як є
-        readonly=True # Не намагаємося записати це в модель
-    )
+
+
 
     # Словник для кешування агентів {normalized_name: agent_id}
     _agent_cache = {}
@@ -59,18 +48,17 @@ class ShiftResource(resources.ModelResource):
 
     class Meta:
         model = Shift
-        # Поля, які імпортуються/експортуються. 'agent' тепер працює з ID.
-        fields = ('id', 'agent', 'team_lead', 'start', 'end', 'direction', 'status', 'activity', 'comment', 'original_agent_name')
-        # Вказуємо порядок для експорту (без тимчасового поля)
+        fields = ('id', 'agent', 'team_lead', 'start', 'end', 'direction', 'status', 'activity', 'comment')
         export_order = ('id', 'agent', 'team_lead', 'start', 'end', 'direction', 'status', 'activity', 'comment')
-        import_id_fields = ('id',)
-        # Продуктивність імпорту
+        import_id_fields = ('id',)  # ДИВ. пункт 4 нижче щодо альтернативи
         skip_unchanged = True
-        report_skipped = False  # менше логів під час великих імпортів
-        use_bulk = True         # швидший запис (bulk_create/bulk_update)
-        batch_size = 1000       # контроль розміру пачок
-        skip_diff = True        # не обчислювати diff для пришвидшення
-        clean_model_instances = False # не викликати full_clean під час імпорту
+        report_skipped = False
+        use_bulk = True
+        batch_size = 1000
+        skip_diff = True
+        clean_model_instances = False
+        use_transactions = True
+        instance_loader_class = CachedInstanceLoader
 
     def before_import(self, dataset, using_transactions=None, dry_run=False, **kwargs):
         """
@@ -138,20 +126,11 @@ class ShiftResource(resources.ModelResource):
         if normalized and normalized in self._agent_cache:
             # Замінюємо значення в колонці 'agent' на ID
             row['agent'] = self._agent_cache[normalized]
-        elif normalized:
-            # Якщо ім'я є, але його немає в кеші - це помилка
+        elif normalized and normalized not in self._agent_cache:
             print(f"ПОМИЛКА в рядку {row_number}: Не знайдено ID для агента '{name}' у кеші!")
-            # Можна пропустити рядок, додавши skip_row=True, або викликати виключення
-            # raise ValueError(f"Agent ID for {username} not found in cache.")
-            kwargs['skip_row'] = True # Пропускаємо цей рядок
-            # Або додати помилку до рядка
-            # self.add_instance_error(None, row_number, row, ValidationError(f"Агента '{username}' не знайдено."))
-            return
-
-        else:
-            # Якщо ім'я агента порожнє, пропускаємо рядок
-            kwargs['skip_row'] = True
-            return
+            raise SkipRow(f"Agent '{name}' не існує")
+        elif not normalized:
+            raise SkipRow("Порожнє ім'я агента")
 
         # Нормалізуємо напрямок (direction) з урахуванням активності
         current_direction = row.get('direction')
@@ -479,8 +458,8 @@ class UsersFromScheduleResource(resources.ModelResource):
                 print(f"[Імпорт користувачів] Оновлено тім-ліда для {assigned} агентів")
 
     def before_import_row(self, row, row_number=None, **kwargs):
-        # Ми все зробили у before_import. Рядки пропускаємо, щоб уникнути спроб запису ModelResource.
-        kwargs['skip_row'] = True
+        # Увесь запис зроблено в before_import. Рядки не записуємо принципово.
+        raise SkipRow("UsersFromScheduleResource: пропуск рядка, запис не виконується")
 
     # Підтримка експорту (не обов'язково, але корисно):
     def dehydrate_agent_display(self, obj):
