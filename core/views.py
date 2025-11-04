@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Optional
 from io import BytesIO
 import json
+from django.db.models import Q, Case, When, Value, IntegerField
 
 from django.utils import timezone
 from django.shortcuts import render, redirect, get_object_or_404
@@ -156,11 +157,42 @@ def schedule_week(request):
     )
 
     agent_ids = {row["agent_id"] for row in raw_shifts}
-    agents = list(
+
+    # Отримуємо ID агента поточного користувача (якщо він є)
+    current_agent_id = getattr(getattr(request.user, "agent", None), "id", None)
+
+    # Створюємо базовий запит
+    agents_qs = (
         Agent.objects.filter(id__in=agent_ids)
         .select_related("user", "team_lead")
-        .order_by("user__last_name", "user__first_name", "user__username")
     )
+
+    if current_agent_id and current_agent_id in agent_ids:
+        # Якщо поточний користувач є серед відфільтрованих агентів,
+        # анотуємо queryset, щоб "помітити" його.
+        agents_qs = agents_qs.annotate(
+            is_current_user=Case(
+                When(id=current_agent_id, then=Value(1)),
+                default=Value(0),
+                output_field=IntegerField(),
+            )
+        ).order_by(
+            "-is_current_user",  # Сортуємо: 1 (поточний користувач) буде вище за 0
+            "user__last_name",  # Далі сортуємо за алфавітом
+            "user__first_name",
+            "user__username",
+        )
+    else:
+        # Якщо поточного користувача немає в списку (або він не агент),
+        # просто сортуємо за алфавітом, як і раніше.
+        agents_qs = agents_qs.order_by(
+            "user__last_name",
+            "user__first_name",
+            "user__username",
+        )
+
+    # Тепер agents буде відсортовано правильно
+    agents = list(agents_qs)
 
     shifts_by_agent = defaultdict(list)
     for row in raw_shifts:
