@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% load crispy_forms_tags %}
+{% load schedule_filters %}
 
 {% block title %}Розклад — Тиждень{% endblock %}
 
@@ -222,6 +223,33 @@
     text-transform: uppercase;
     width: 100%;
   }
+  .pagination {
+    margin-bottom: 0;
+  }
+  .pagination .page-link {
+    border-radius: 0.75rem;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    color: var(--text-secondary);
+    padding: 0.5rem 0.75rem;
+    margin: 0 0.25rem;
+    transition: all 0.2s ease;
+  }
+  .pagination .page-link:hover {
+    background: rgba(76, 201, 240, 0.16);
+    color: var(--text-primary);
+    border-color: rgba(76, 201, 240, 0.3);
+  }
+  .pagination .page-item.active .page-link {
+    background: var(--brand-accent);
+    color: #0f172a;
+    border-color: var(--brand-accent);
+    font-weight: 600;
+  }
+  .pagination .page-item.disabled .page-link {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: transparent;
+  }
   @media (max-width: 1199.98px) {
     .schedule-toolbar {
       padding: 1.75rem;
@@ -258,8 +286,28 @@
         <h1 class="schedule-week-title">Розклад на {{ week_start|date:"d.m" }} – {{ days.6|date:"d.m.Y" }}</h1>
         <p class="schedule-week-range">Планування змін з {{ week_start|date:"l, d.m" }} по {{ days.6|date:"l, d.m" }}</p>
         <div class="d-flex flex-wrap gap-2 mt-3">
-          <span class="meta-pill">Агентів: {{ table|length }}</span>
+          <span class="meta-pill">Агентів: {% if paginator %}{{ paginator.count }}{% else %}{{ table|length }}{% endif %}</span>
+          {% if debug_info %}
+          <div style="background: #f0f0f0; padding: 10px; margin-top: 10px; font-size: 0.85em; border-radius: 4px;">
+            <strong>Профілювання:</strong><br>
+            Загальний час: {{ debug_info.timings.total|floatformat:3 }}с<br>
+            Кеш: {{ debug_info.timings.cache_check|floatformat:3 }}с<br>
+            Запит змін: {{ debug_info.timings.shifts_query|floatformat:3 }}с ({{ debug_info.timings.shifts_count }} змін)<br>
+            Обробка змін: {{ debug_info.timings.shifts_processing|floatformat:3 }}с<br>
+            Запит агентів: {{ debug_info.timings.agents_query|floatformat:3 }}с<br>
+            Пагінація: {{ debug_info.timings.pagination|floatformat:3 }}с<br>
+            Побудова таблиці: {{ debug_info.timings.table_build|floatformat:3 }}с<br>
+            {% if debug_info.timings.sql_queries %}
+            SQL запитів: {{ debug_info.timings.sql_queries }}, час: {{ debug_info.timings.sql_time|floatformat:3 }}с<br>
+            {% endif %}
+            Агентів всього: {{ debug_info.total_agents }}, на сторінці: {{ debug_info.paginated_agents }}<br>
+            Змін оброблено: {{ debug_info.shifts_processed }}
+          </div>
+          {% endif %}
           <span class="meta-pill">Днів: {{ days|length }}</span>
+          {% if paginator and paginator.num_pages > 1 %}
+            <span class="meta-pill">Сторінка {{ page.number }} з {{ paginator.num_pages }}</span>
+          {% endif %}
         </div>
       </div>
       <div class="d-flex flex-column align-items-stretch align-items-lg-end gap-3">
@@ -350,8 +398,8 @@
                                data-shift-id="{{ s.id }}"
                                data-status="{{ s.status }}"
                                data-direction="{{ s.direction }}"
-                               data-start-hm="{{ s.start_hm }}"
-                               data-end-hm="{{ s.end_hm }}"
+                               data-start-hm="{{ s.start|fmt_time }}"
+                               data-end-hm="{{ s.end|fmt_time }}"
                                data-comment="{{ s.comment|default_if_none:''|escape }}">
                             {{ s.status_label }}{% if s.comment %} · {{ s.comment }}{% endif %}
                           </div>
@@ -360,11 +408,11 @@
                                data-shift-id="{{ s.id }}"
                                data-status="{{ s.status }}"
                                data-direction="{{ s.direction }}"
-                               data-start-hm="{{ s.start_hm }}"
-                               data-end-hm="{{ s.end_hm }}"
+                               data-start-hm="{{ s.start|fmt_time }}"
+                               data-end-hm="{{ s.end|fmt_time }}"
                                data-comment="{{ s.comment|default_if_none:''|escape }}">
                             <span class="shift-card__direction">{{ s.direction_label }}</span>
-                            <span class="shift-card__time">{{ s.time_label }}</span>
+                            <span class="shift-card__time">{{ s.start|fmt_time }}–{{ s.end|fmt_time }}</span>
                             {% if s.comment %}<span class="shift-card__meta">{{ s.comment }}</span>{% endif %}
                           </div>
                         {% elif s.status == 'mentor' %}
@@ -372,11 +420,11 @@
                                data-shift-id="{{ s.id }}"
                                data-status="{{ s.status }}"
                                data-direction="{{ s.direction }}"
-                               data-start-hm="{{ s.start_hm }}"
-                               data-end-hm="{{ s.end_hm }}"
+                               data-start-hm="{{ s.start|fmt_time }}"
+                               data-end-hm="{{ s.end|fmt_time }}"
                                data-comment="{{ s.comment|default_if_none:''|escape }}">
                             <span class="shift-card__direction">{{ s.status_label }}</span>
-                            <span class="shift-card__time">{{ s.time_label }}</span>
+                            <span class="shift-card__time">{{ s.start|fmt_time }}–{{ s.end|fmt_time }}</span>
                             {% if s.comment %}<span class="shift-card__meta">{{ s.comment }}</span>{% endif %}
                           </div>
                         {% elif s.status == 'training' or s.status == 'meeting' or s.status == 'onboard' %}
@@ -384,11 +432,11 @@
                                data-shift-id="{{ s.id }}"
                                data-status="{{ s.status }}"
                                data-direction="{{ s.direction }}"
-                               data-start-hm="{{ s.start_hm }}"
-                               data-end-hm="{{ s.end_hm }}"
+                               data-start-hm="{{ s.start|fmt_time }}"
+                               data-end-hm="{{ s.end|fmt_time }}"
                                data-comment="{{ s.comment|default_if_none:''|escape }}">
                             <span class="shift-card__direction">{{ s.status_label }}</span>
-                            <span class="shift-card__time">{{ s.time_label }}</span>
+                            <span class="shift-card__time">{{ s.start|fmt_time }}–{{ s.end|fmt_time }}</span>
                             {% if s.comment %}<span class="shift-card__meta">{{ s.comment }}</span>{% endif %}
                           </div>
                         {% else %}
@@ -396,11 +444,11 @@
                                data-shift-id="{{ s.id }}"
                                data-status="{{ s.status }}"
                                data-direction="{{ s.direction }}"
-                               data-start-hm="{{ s.start_hm }}"
-                               data-end-hm="{{ s.end_hm }}"
+                               data-start-hm="{{ s.start|fmt_time }}"
+                               data-end-hm="{{ s.end|fmt_time }}"
                                data-comment="{{ s.comment|default_if_none:''|escape }}">
                             <span class="shift-card__direction">{{ s.direction_label }}</span>
-                            <span class="shift-card__time">{{ s.time_label }}</span>
+                            <span class="shift-card__time">{{ s.start|fmt_time }}–{{ s.end|fmt_time }}</span>
                             <span class="shift-card__meta">{{ s.status_label }}{% if s.comment %} · {{ s.comment }}{% endif %}</span>
                           </div>
                         {% endif %}
@@ -421,6 +469,49 @@
       </table>
     </div>
   </div>
+
+  {% if paginator.num_pages > 1 %}
+    <div class="d-flex justify-content-center mt-4">
+      <nav aria-label="Пагінація агентів">
+        <ul class="pagination">
+          {% if page.has_previous %}
+            <li class="page-item">
+              <a class="page-link" href="?{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}page={{ page.previous_page_number }}">‹ Попередня</a>
+            </li>
+          {% else %}
+            <li class="page-item disabled">
+              <span class="page-link">‹ Попередня</span>
+            </li>
+          {% endif %}
+
+          {% for num in paginator.page_range %}
+            {% if page.number == num %}
+              <li class="page-item active">
+                <span class="page-link">{{ num }}</span>
+              </li>
+            {% elif num > page.number|add:'-3' and num < page.number|add:'3' %}
+              <li class="page-item">
+                <a class="page-link" href="?{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}page={{ num }}">{{ num }}</a>
+              </li>
+            {% endif %}
+          {% endfor %}
+
+          {% if page.has_next %}
+            <li class="page-item">
+              <a class="page-link" href="?{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}page={{ page.next_page_number }}">Наступна ›</a>
+            </li>
+          {% else %}
+            <li class="page-item disabled">
+              <span class="page-link">Наступна ›</span>
+            </li>
+          {% endif %}
+        </ul>
+      </nav>
+    </div>
+    <div class="text-center text-muted mt-2 mb-4">
+      <small>Показано {{ page.start_index }}–{{ page.end_index }} з {{ paginator.count }} агентів</small>
+    </div>
+  {% endif %}
 </div>
 
 <!-- Context menu for shifts -->

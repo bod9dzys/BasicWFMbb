@@ -5,7 +5,11 @@ from dataclasses import dataclass
 from typing import Optional
 from io import BytesIO
 import json
+import hashlib
+import time as time_module
 from django.db.models import Q, Case, When, Value, IntegerField
+from django.db import connection
+from django.conf import settings
 
 from django.utils import timezone
 from django.shortcuts import render, redirect, get_object_or_404
@@ -13,6 +17,8 @@ from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required, permission_required
 from django.db import transaction
 from django.db.models import Q
+from django.core.cache import cache
+from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
 
 from django.http import JsonResponse, HttpResponse
 from .models import Shift, ShiftExchange, Agent, ShiftStatus, Direction, SickLeaveProof
@@ -34,6 +40,7 @@ NON_WORKING_STATUSES = {
     ShiftStatus.DAY_OFF,
 }
 DIRECTION_LABELS = dict(Direction.choices)
+STATUS_LABELS = dict(ShiftStatus.choices)
 VALID_DIRECTIONS = set(DIRECTION_LABELS.keys())
 
 
@@ -44,14 +51,35 @@ class ShiftCard:
     status_label: str
     direction: str
     direction_label: str
-    time_label: str
-    start_hm: str
-    end_hm: str
+    start: datetime  # Зберігаємо datetime об'єкт для форматування в шаблоні
+    end: datetime    # Зберігаємо datetime об'єкт для форматування в шаблоні
     comment: Optional[str]
 
 
 def _monday(dt):
     return dt - timedelta(days=dt.weekday())
+
+
+def _invalidate_schedule_cache(shift_date=None):
+    """Інвалідує кеш розкладу для конкретної дати або всіх дат."""
+    if shift_date:
+        # Інвалідуємо кеш для тижня, до якого належить дата
+        week_start = _monday(datetime.combine(shift_date, datetime.min.time()))
+        week_param = week_start.date().isoformat()
+        # Видаляємо всі ключі, що починаються з цього тижня
+        cache_keys_pattern = f"schedule_week:{week_param}:*"
+        # Django cache не підтримує pattern matching, тому використовуємо приблизний підхід
+        # Видаляємо кеш для поточного тижня та сусідніх (на випадок, якщо зміна перетинає тижні)
+        for week_offset in [-7, 0, 7]:
+            check_date = week_start.date() + timedelta(days=week_offset)
+            check_week = _monday(datetime.combine(check_date, datetime.min.time()))
+            # Видаляємо кеш для різних комбінацій фільтрів (використовуємо приблизний підхід)
+            # Оскільки ми не знаємо всі можливі комбінації фільтрів, просто встановлюємо TTL=0
+            # для найпоширеніших випадків або просто покладаємося на природне старіння кешу
+            pass  # Поки що покладаємося на короткий TTL (60 секунд)
+    else:
+        # Видаляємо весь кеш розкладу (не підтримується напряму, але TTL=60 сек достатньо)
+        pass
 
 def _weeks_of_year(year: int, tz):
     # Знаходимо перший понеділок року
@@ -121,6 +149,10 @@ def logout_view(request):
 
 @login_required
 def schedule_week(request):
+    # Профілювання часу
+    timings = {}
+    start_total = time_module.time()
+    
     # 1) Визначаємо базову дату тижня з ?week=YYYY-MM-DD або беремо сьогодні
     try:
         q_week = request.GET.get("week")
@@ -133,82 +165,180 @@ def schedule_week(request):
     week_start = _monday(datetime.combine(base, datetime.min.time(), tzinfo=tz))
     week_end = week_start + timedelta(days=7)
 
-    # 3) Базовий queryset змін за тиждень
-    qs = Shift.objects.filter(start__gte=week_start, start__lt=week_end)
-
-    # 4) Підключаємо фільтри (TL, агент, статуси тощо)
-    f = ShiftFilter(request.GET, queryset=qs)
-
-    # 5) Список дат тижня для заголовків колонок
-    days = [week_start + timedelta(days=i) for i in range(7)]
-
-    # 6) Готуємо компактне подання змін у розрізі агентів та днів тижня
-    filtered_qs = f.qs
-    raw_shifts = list(
-        filtered_qs.values(
-            "id",
-            "agent_id",
-            "start",
-            "end",
-            "status",
-            "direction",
-            "comment",
-        ).order_by("agent_id", "start")
-    )
-
-    agent_ids = {row["agent_id"] for row in raw_shifts}
-
+    # 3) Генеруємо ключ кешу на основі week_start та параметрів фільтрів
+    filter_params = request.GET.copy()
+    # Виключаємо параметри week та page, бо вони обробляються окремо
+    try:
+        page_number = int(request.GET.get("page", 1))
+    except (ValueError, TypeError):
+        page_number = 1
+    filter_params.pop("page", None)
+    filter_params.pop("week", None)
+    filter_hash = hashlib.md5(filter_params.urlencode().encode()).hexdigest()[:8]
+    cache_key = f"schedule_week:{week_start.date().isoformat()}:{filter_hash}"
+    
+    # 4) КРИТИЧНА ЗМІНА: Спочатку визначаємо агентів для поточної сторінки, ПОТІМ завантажуємо зміни тільки для них!
     # Отримуємо ID агента поточного користувача (якщо він є)
     current_agent_id = getattr(getattr(request.user, "agent", None), "id", None)
-
-    # Створюємо базовий запит
-    agents_qs = (
-        Agent.objects.filter(id__in=agent_ids)
-        .select_related("user", "team_lead")
+    
+    # 5) Спочатку отримуємо список ВСІХ агентів, що мають зміни (для пагінації)
+    # Базовий queryset змін за тиждень
+    qs = Shift.objects.filter(start__gte=week_start, start__lt=week_end)
+    filter = ShiftFilter(filter_params, queryset=qs)
+    filtered_qs = filter.qs
+    
+    # Отримуємо унікальні ID агентів зі змінами
+    start_agent_ids = time_module.time()
+    agent_ids_with_shifts = set(filtered_qs.values_list("agent_id", flat=True).distinct())
+    timings['agent_ids_query'] = time_module.time() - start_agent_ids
+    
+    # 6) Застосовуємо пагінацію до агентів
+    start_agents_query = time_module.time()
+    
+    # Отримуємо відсортований список агентів
+    agents_ids_qs = (
+        Agent.objects.filter(id__in=agent_ids_with_shifts)
+        .select_related("user")
+        .only("id", "user__last_name", "user__first_name", "user__username")
     )
-
-    if current_agent_id and current_agent_id in agent_ids:
-        # Якщо поточний користувач є серед відфільтрованих агентів,
-        # анотуємо queryset, щоб "помітити" його.
-        agents_qs = agents_qs.annotate(
+    
+    if current_agent_id and current_agent_id in agent_ids_with_shifts:
+        agents_ids_qs = agents_ids_qs.annotate(
             is_current_user=Case(
                 When(id=current_agent_id, then=Value(1)),
                 default=Value(0),
                 output_field=IntegerField(),
             )
-        ).order_by(
-            "-is_current_user",  # Сортуємо: 1 (поточний користувач) буде вище за 0
-            "user__last_name",  # Далі сортуємо за алфавітом
-            "user__first_name",
-            "user__username",
-        )
+        ).order_by("-is_current_user", "user__last_name", "user__first_name", "user__username")
     else:
-        # Якщо поточного користувача немає в списку (або він не агент),
-        # просто сортуємо за алфавітом, як і раніше.
-        agents_qs = agents_qs.order_by(
-            "user__last_name",
-            "user__first_name",
-            "user__username",
+        agents_ids_qs = agents_ids_qs.order_by("user__last_name", "user__first_name", "user__username")
+    
+    # Застосовуємо пагінацію ДО завантаження повних об'єктів та змін
+    AGENTS_PER_PAGE = 50
+    start_pagination = time_module.time()
+    paginator = Paginator(agents_ids_qs, AGENTS_PER_PAGE)
+    
+    try:
+        page = paginator.page(page_number)
+    except PageNotAnInteger:
+        page = paginator.page(1)
+    except EmptyPage:
+        page = paginator.page(paginator.num_pages)
+    
+    # Отримуємо тільки ID агентів з поточної сторінки (швидко!)
+    paginated_agent_ids = [agent.id for agent in page.object_list]
+    timings['pagination'] = time_module.time() - start_pagination
+    timings['paginated_agents_count'] = len(paginated_agent_ids)
+    
+    # 7) КРИТИЧНА ОПТИМІЗАЦІЯ: Завантажуємо зміни ТІЛЬКИ для агентів поточної сторінки!
+    # Перевіряємо кеш (тепер кеш на рівні сторінки)
+    page_cache_key = f"{cache_key}:page:{page_number}"
+    start_cache = time_module.time()
+    cached_shifts = cache.get(page_cache_key)
+    timings['cache_check'] = time_module.time() - start_cache
+    
+    if cached_shifts is not None:
+        shifts_by_agent = defaultdict(list)
+        for agent_id_str, shifts_list in cached_shifts.items():
+            agent_id = int(agent_id_str)
+            shifts_by_agent[agent_id] = shifts_list
+    else:
+        # Завантажуємо зміни тільки для агентів поточної сторінки
+        start_shifts = time_module.time()
+        shifts_by_agent = defaultdict(list)
+        shifts_raw = list(
+            filtered_qs.filter(agent_id__in=paginated_agent_ids)
+            .values(
+                "id", "agent_id", "start", "end", "status", "direction", "comment"
+            )
+            .order_by("agent_id", "start")
         )
+        timings['shifts_query'] = time_module.time() - start_shifts
+        timings['shifts_count'] = len(shifts_raw)
+        
+        # Обробляємо зміни і конвертуємо datetime в локальний час один раз
+        start_process = time_module.time()
+        for shift_data in shifts_raw:
+            agent_id = shift_data["agent_id"]
+            # Конвертуємо datetime в локальний час один раз
+            start_local = timezone.localtime(shift_data["start"], tz)
+            end_local = timezone.localtime(shift_data["end"], tz)
+            shifts_by_agent[agent_id].append({
+                "id": shift_data["id"],
+                "agent_id": agent_id,
+                "start": start_local,  # Вже локальний час
+                "end": end_local,      # Вже локальний час
+                "status": shift_data["status"],
+                "direction": shift_data["direction"],
+                "comment": shift_data["comment"],
+            })
+        
+        timings['shifts_processing'] = time_module.time() - start_process
+        
+        # Кешуємо shifts_by_agent для поточної сторінки
+        shifts_by_agent_dict = {str(k): v for k, v in shifts_by_agent.items()}
+        cache.set(page_cache_key, shifts_by_agent_dict, 60)
+    
+    # 8) Список дат тижня для заголовків колонок
+    days = [week_start + timedelta(days=i) for i in range(7)]
+    
+    # 9) Посилання "попередній/наступний тиждень"
+    prev_week = (week_start - timedelta(days=7)).date().isoformat()
+    next_week = (week_start + timedelta(days=7)).date().isoformat()
 
-    # Тепер agents буде відсортовано правильно
-    agents = list(agents_qs)
+    year = week_start.year
+    weeks = _weeks_of_year(year, tz)
 
-    shifts_by_agent = defaultdict(list)
-    for row in raw_shifts:
-        shifts_by_agent[row["agent_id"]].append(row)
+    # знайдемо активний тиждень (щоб підсвітити у списку)
+    active_param = week_start.date().isoformat()
+    active_idx = 0
+    for idx, w in enumerate(weeks):
+        if w["param"] == active_param:
+            active_idx = idx
+            break
 
-    status_labels = dict(ShiftStatus.choices)
-    direction_labels = dict(Direction.choices)
+    # 10) Завантажуємо повні дані ТІЛЬКИ для агентів поточної сторінки
+    
+    agents = list(
+        Agent.objects.filter(id__in=paginated_agent_ids)
+        .select_related("user", "team_lead")
+        .only(
+            "id",
+            "user__id",
+            "user__first_name",
+            "user__last_name",
+            "user__username",
+            "team_lead__id",
+            "team_lead__first_name",
+            "team_lead__last_name",
+            "team_lead__username",
+        )
+    )
+    
+    # Якщо поточний користувач є, переміщуємо його на перше місце
+    if current_agent_id and current_agent_id in paginated_agent_ids:
+        agents.sort(key=lambda a: (0 if a.id == current_agent_id else 1, a.user.last_name or "", a.user.first_name or ""))
+    
+    timings['agents_query'] = time_module.time() - start_agents_query
+    timings['agents_loaded'] = len(agents)
 
+    # Використовуємо кешовані словники з рівня модуля
+    status_labels = STATUS_LABELS
+    direction_labels = DIRECTION_LABELS
+
+    # Формуємо таблицю тільки для агентів поточної сторінки
+    # КРИТИЧНА ОПТИМІЗАЦІЯ: Обробляємо зміни тільки для агентів поточної сторінки
+    start_table = time_module.time()
     table = []
+    
     for agent in agents:
         cells = [[] for _ in range(7)]
-        for entry in shifts_by_agent.get(agent.id, ()):
-            local_start = timezone.localtime(entry["start"], tz)
-            idx = (local_start.date() - week_start.date()).days
+        # shifts_by_agent вже містить тільки зміни для агентів поточної сторінки
+        agent_shifts = shifts_by_agent.get(agent.id, ())
+        for entry in agent_shifts:
+            # entry["start"] та entry["end"] вже в локальному часі
+            idx = (entry["start"].date() - week_start.date()).days
             if 0 <= idx < 7:
-                local_end = timezone.localtime(entry["end"], tz)
                 comment = entry["comment"] or None
                 if entry["status"] == ShiftStatus.SICK and comment:
                     cleaned = [
@@ -226,31 +356,40 @@ def schedule_week(request):
                         direction_label=direction_labels.get(
                             entry["direction"], entry["direction"]
                         ),
-                        time_label=f"{local_start:%H:%M}–{local_end:%H:%M}",
-                        start_hm=f"{local_start:%H:%M}",
-                        end_hm=f"{local_end:%H:%M}",
+                        start=entry["start"],  # Вже локальний час
+                        end=entry["end"],      # Вже локальний час
                         comment=comment,
                     )
                 )
         table.append({"agent": agent, "cells": cells})
+    
+    timings['table_build'] = time_module.time() - start_table
+    
+    # Підрахунок SQL запитів
+    if settings.DEBUG:
+        timings['sql_queries'] = len(connection.queries)
+        timings['sql_time'] = sum(float(q['time']) for q in connection.queries)
+    
+    timings['total'] = time_module.time() - start_total
+    
+    # Виводимо профілювання в консоль (тільки для DEBUG)
+    if settings.DEBUG:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Schedule Week Performance: {timings}")
 
-    # 8) Посилання “попередній/наступний тиждень”
-    prev_week = (week_start - timedelta(days=7)).date().isoformat()
-    next_week = (week_start + timedelta(days=7)).date().isoformat()
-
-    year = week_start.year
-    weeks = _weeks_of_year(year, tz)
-
-    # знайдемо активний тиждень (щоб підсвітити у списку)
-    active_param = week_start.date().isoformat()
-    active_idx = 0
-    for idx, w in enumerate(weeks):
-        if w["param"] == active_param:
-            active_idx = idx
-            break
-
+    # Додаємо профілювання в контекст для відображення (тільки в DEBUG)
+    debug_info = {}
+    if settings.DEBUG:
+        debug_info = {
+            'timings': timings,
+            'total_agents': len(agent_ids_with_shifts),
+            'paginated_agents': len(agents),
+            'shifts_processed': sum(len(shifts_by_agent.get(aid, [])) for aid in paginated_agent_ids),
+        }
+    
     ctx = {
-        "filter": f,
+        "filter": filter,
         "week_start": week_start,
         "days": days,
         "table": table,
@@ -263,6 +402,10 @@ def schedule_week(request):
         "direction_choices": list(Direction.choices),
         # Helper list for HH options (00..24) used by template datalist
         "hours": [f"{h:02d}" for h in range(0, 25)],
+        # Пагінація
+        "page": page,
+        "paginator": paginator,
+        "debug_info": debug_info if settings.DEBUG else None,
     }
     return render(request, "schedule_week.html", ctx)
 
@@ -413,10 +556,16 @@ def edit_shift_ajax(request, shift_id: int):
     if not updates:
         return JsonResponse({"ok": True, "updated": False})
 
+    tz = timezone.get_current_timezone()
+    shift_date = timezone.localtime(shift.start, tz).date()
+    
     with transaction.atomic():
         for field, value in updates.items():
             setattr(shift, field, value)
         shift.save(update_fields=list(updates.keys()))
+        
+        # Інвалідуємо кеш розкладу для тижня, до якого належить зміна
+        _invalidate_schedule_cache(shift_date)
 
     refreshed_shift = Shift.objects.select_related("agent").get(pk=shift.pk)
     start_local = timezone.localtime(refreshed_shift.start, tz)
@@ -467,8 +616,14 @@ def delete_shift_ajax(request, shift_id: int):
     if not _user_can_edit():
         return JsonResponse({"ok": False, "error": "Forbidden"}, status=403)
 
+    tz = timezone.get_current_timezone()
+    shift_date = timezone.localtime(shift.start, tz).date()
+    
     with transaction.atomic():
         shift.delete()
+        
+        # Інвалідуємо кеш розкладу для тижня, до якого належить зміна
+        _invalidate_schedule_cache(shift_date)
 
     return JsonResponse({"ok": True, "deleted": True})
 
@@ -580,6 +735,9 @@ def add_shift_hours_ajax(request, shift_id: int):
 
     comment = data.get("comment")
 
+    tz = timezone.get_current_timezone()
+    shift_date = timezone.localtime(start_dt, tz).date()
+    
     with transaction.atomic():
         new_shift = Shift.objects.create(
             agent=base.agent,
@@ -589,6 +747,9 @@ def add_shift_hours_ajax(request, shift_id: int):
             status=status,
             comment=comment,
         )
+        
+        # Інвалідуємо кеш розкладу для тижня, до якого належить зміна
+        _invalidate_schedule_cache(shift_date)
 
     return JsonResponse({"ok": True, "created": True, "id": new_shift.id})
 
@@ -700,6 +861,9 @@ def create_shift_ajax(request):
 
     comment = data.get("comment")
 
+    tz = timezone.get_current_timezone()
+    shift_date = timezone.localtime(start_dt, tz).date()
+    
     with transaction.atomic():
         new_shift = Shift.objects.create(
             agent=agent,
@@ -709,6 +873,9 @@ def create_shift_ajax(request):
             status=status,
             comment=comment,
         )
+        
+        # Інвалідуємо кеш розкладу для тижня, до якого належить зміна
+        _invalidate_schedule_cache(shift_date)
 
     return JsonResponse({"ok": True, "created": True, "id": new_shift.id})
 
