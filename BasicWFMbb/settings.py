@@ -21,7 +21,7 @@ SECRET_KEY = os.environ.get(
     'SECRET_KEY',
     'django-insecure-f=%z%o-_z(05*+im8g9%iiuhs_o+wylhx)5lnnf708zs$+inq2'
 )
-DEBUG = os.environ.get('DEBUG', 'False') == 'True'
+DEBUG = os.environ.get('DEBUG', 'False') == 'False'
 
 # --- Налаштування хостів (ALLOWED_HOSTS) ---
 ALLOWED_HOSTS = ['127.0.0.1', 'localhost']

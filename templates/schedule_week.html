@@ -286,7 +286,7 @@
         <h1 class="schedule-week-title">Розклад на {{ week_start|date:"d.m" }} – {{ days.6|date:"d.m.Y" }}</h1>
         <p class="schedule-week-range">Планування змін з {{ week_start|date:"l, d.m" }} по {{ days.6|date:"l, d.m" }}</p>
         <div class="d-flex flex-wrap gap-2 mt-3">
-          <span class="meta-pill">Агентів: {% if paginator %}{{ paginator.count }}{% else %}{{ table|length }}{% endif %}</span>
+          <span class="meta-pill">Агентів: {{ table|length }}</span>
           {% if debug_info %}
           <div style="background: #f0f0f0; padding: 10px; margin-top: 10px; font-size: 0.85em; border-radius: 4px;">
             <strong>Профілювання:</strong><br>
@@ -295,24 +295,20 @@
             Запит змін: {{ debug_info.timings.shifts_query|floatformat:3 }}с ({{ debug_info.timings.shifts_count }} змін)<br>
             Обробка змін: {{ debug_info.timings.shifts_processing|floatformat:3 }}с<br>
             Запит агентів: {{ debug_info.timings.agents_query|floatformat:3 }}с<br>
-            Пагінація: {{ debug_info.timings.pagination|floatformat:3 }}с<br>
             Побудова таблиці: {{ debug_info.timings.table_build|floatformat:3 }}с<br>
             {% if debug_info.timings.sql_queries %}
             SQL запитів: {{ debug_info.timings.sql_queries }}, час: {{ debug_info.timings.sql_time|floatformat:3 }}с<br>
             {% endif %}
-            Агентів всього: {{ debug_info.total_agents }}, на сторінці: {{ debug_info.paginated_agents }}<br>
+            Агентів всього: {{ debug_info.total_agents }}, показано: {{ debug_info.agents_shown }}<br>
             Змін оброблено: {{ debug_info.shifts_processed }}
           </div>
           {% endif %}
           <span class="meta-pill">Днів: {{ days|length }}</span>
-          {% if paginator and paginator.num_pages > 1 %}
-            <span class="meta-pill">Сторінка {{ page.number }} з {{ paginator.num_pages }}</span>
-          {% endif %}
         </div>
       </div>
       <div class="d-flex flex-column align-items-stretch align-items-lg-end gap-3">
         <div class="btn-group week-nav" role="group" aria-label="Навігація тижнями">
-          <a class="btn btn-soft" href="{% url 'schedule_week' %}?week={{ prev_week }}">‹ Попередній</a>
+          <a class="btn btn-soft" href="{% url 'schedule_week' %}?week={{ prev_week }}{% if show_all %}&show_all=1{% endif %}">‹ Попередній</a>
           <div class="dropdown week-dropdown">
             <button class="btn btn-soft dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
               Тиждень: {{ week_start|date:"d.m" }} – {{ days.6|date:"d.m.Y" }}
@@ -320,20 +316,26 @@
             <div id="weeksDropdown" class="dropdown-menu p-0" style="max-height: 320px; overflow: auto; min-width: 320px;">
               {% for w in weeks %}
                 <a class="dropdown-item {% if forloop.counter0 == active_week_idx %}active{% endif %}"
-                   href="{% url 'schedule_week' %}?week={{ w.param }}">
+                   href="{% url 'schedule_week' %}?week={{ w.param }}{% if show_all %}&show_all=1{% endif %}">
                   {{ w.label }}
                 </a>
               {% endfor %}
             </div>
           </div>
-          <a class="btn btn-soft" href="{% url 'schedule_week' %}?week={{ next_week }}">Наступний ›</a>
+          <a class="btn btn-soft" href="{% url 'schedule_week' %}?week={{ next_week }}{% if show_all %}&show_all=1{% endif %}">Наступний ›</a>
         </div>
         <a href="{% url 'exchange_create' %}" class="btn btn-accent">Обмін змінами</a>
       </div>
     </div>
   </div>
 
-  <div class="d-flex justify-content-end">
+  <div class="d-flex justify-content-end align-items-center gap-3">
+    {% if is_agent_view %}
+      <a href="?{% for key, value in request.GET.items %}{% if key != 'show_all' %}{{ key }}={{ value }}&{% endif %}{% endfor %}show_all=1" 
+         class="btn btn-soft btn-sm">
+        Показати всіх агентів
+      </a>
+    {% endif %}
     <button class="btn btn-soft btn-sm schedule-filter__toggle" type="button" data-bs-toggle="collapse" data-bs-target="#filtersCollapse" aria-expanded="false" aria-controls="filtersCollapse">
       Фільтри
     </button>
@@ -344,6 +346,7 @@
       <div class="card-body">
         <form method="get" class="row g-3 align-items-end">
           <input type="hidden" name="week" value="{{ request.GET.week|default:week_param }}">
+          {% if show_all %}<input type="hidden" name="show_all" value="1">{% endif %}
           <div class="col-12">
             <div class="row g-3">
               {% crispy filter.form %}
@@ -469,49 +472,6 @@
       </table>
     </div>
   </div>
-
-  {% if paginator.num_pages > 1 %}
-    <div class="d-flex justify-content-center mt-4">
-      <nav aria-label="Пагінація агентів">
-        <ul class="pagination">
-          {% if page.has_previous %}
-            <li class="page-item">
-              <a class="page-link" href="?{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}page={{ page.previous_page_number }}">‹ Попередня</a>
-            </li>
-          {% else %}
-            <li class="page-item disabled">
-              <span class="page-link">‹ Попередня</span>
-            </li>
-          {% endif %}
-
-          {% for num in paginator.page_range %}
-            {% if page.number == num %}
-              <li class="page-item active">
-                <span class="page-link">{{ num }}</span>
-              </li>
-            {% elif num > page.number|add:'-3' and num < page.number|add:'3' %}
-              <li class="page-item">
-                <a class="page-link" href="?{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}page={{ num }}">{{ num }}</a>
-              </li>
-            {% endif %}
-          {% endfor %}
-
-          {% if page.has_next %}
-            <li class="page-item">
-              <a class="page-link" href="?{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}page={{ page.next_page_number }}">Наступна ›</a>
-            </li>
-          {% else %}
-            <li class="page-item disabled">
-              <span class="page-link">Наступна ›</span>
-            </li>
-          {% endif %}
-        </ul>
-      </nav>
-    </div>
-    <div class="text-center text-muted mt-2 mb-4">
-      <small>Показано {{ page.start_index }}–{{ page.end_index }} з {{ paginator.count }} агентів</small>
-    </div>
-  {% endif %}
 </div>
 
 <!-- Context menu for shifts -->

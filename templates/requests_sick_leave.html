@@ -38,36 +38,6 @@
   .sick-request-form__date-field .flatpickr-input {
     padding-right: 2.5rem;
   }
-  .pending-proof-list {
-    margin-bottom: 2rem;
-    border-radius: 1rem;
-    border: 1px solid rgba(244, 114, 182, 0.35);
-    background: rgba(255, 240, 246, 0.95);
-    padding: 1.5rem;
-  }
-  .pending-proof-item + .pending-proof-item {
-    margin-top: 1.25rem;
-    padding-top: 1.25rem;
-    border-top: 1px dashed rgba(244, 114, 182, 0.4);
-  }
-  .pending-proof-item__header {
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
-    align-items: flex-start;
-  }
-  .pending-proof-item__period {
-    font-weight: 600;
-  }
-  .pending-proof-item__form {
-    margin-top: 0.75rem;
-  }
-  .pending-proof-item__actions {
-    display: flex;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    align-items: center;
-  }
 </style>
 
 <div class="card glass-card sick-request-card">
@@ -75,43 +45,6 @@
     <span class="badge bg-light text-dark text-uppercase fw-semibold small px-3 py-2">Запит на лікарняний</span>
     <h1 class="h4 fw-semibold mb-0">Запит на лікарняний</h1>
   </div>
-
-  {% if pending_proofs %}
-    <div class="pending-proof-list" id="pending-proof">
-      <h2 class="h5 mb-3 text-danger">
-        Неприкріплені підтвердження
-      </h2>
-      {% for item in pending_proofs %}
-        <div class="pending-proof-item">
-          <div class="pending-proof-item__header">
-            <span class="pending-proof-item__period">{{ item.proof.get_proof_type_display }}</span>
-            <span class="text-muted small">Період: {{ item.proof.start_date|date:"d.m.Y" }} – {{ item.proof.end_date|date:"d.m.Y" }}</span>
-            <span class="text-muted small">Подано: {{ item.proof.created_at|date:"d.m.Y H:i" }}</span>
-          </div>
-          <form method="post"
-                action="{% url 'upload_sick_leave_proof' item.proof.pk %}"
-                enctype="multipart/form-data"
-                class="pending-proof-item__form">
-            {% csrf_token %}
-            <input type="hidden" name="next" value="{{ request.get_full_path }}">
-            <div class="pending-proof-item__actions">
-              <div class="flex-grow-1">
-                {{ item.form.attachment }}
-                {% if item.form.errors %}
-                  <div class="text-danger small mt-1">
-                    {{ item.form.errors.attachment.0 }}
-                  </div>
-                {% else %}
-                  <div class="form-text">Додайте файл підтвердження для цього періоду.</div>
-                {% endif %}
-              </div>
-              <button type="submit" class="btn btn-accent btn-sm">Прикріпити</button>
-            </div>
-          </form>
-        </div>
-      {% endfor %}
-    </div>
-  {% endif %}
 
   <form method="post" class="sick-request-form row g-3" enctype="multipart/form-data">
     {% csrf_token %}
