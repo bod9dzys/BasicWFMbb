@@ -329,12 +329,19 @@
     </div>
   </div>
 
-  <div class="d-flex justify-content-end align-items-center gap-3">
-    {% if is_agent_view %}
-      <a href="?{% for key, value in request.GET.items %}{% if key != 'show_all' %}{{ key }}={{ value }}&{% endif %}{% endfor %}show_all=1" 
-         class="btn btn-soft btn-sm">
-        Показати всіх агентів
-      </a>
+  <div class="d-flex justify-content-end gap-2 flex-wrap align-items-center">
+    {% if current_agent %}
+      {% if show_all %}
+        <a href="?{% for key, value in request.GET.items %}{% if key != 'show_all' %}{{ key }}={{ value|urlencode }}&{% endif %}{% endfor %}"
+           class="btn btn-soft btn-sm schedule-filter__toggle">
+          Показати тільки мене
+        </a>
+      {% else %}
+        <a href="?{% for key, value in request.GET.items %}{% if key != 'show_all' %}{{ key }}={{ value|urlencode }}&{% endif %}{% endfor %}show_all=1"
+           class="btn btn-soft btn-sm schedule-filter__toggle">
+          Показати усіх агентів
+        </a>
+      {% endif %}
     {% endif %}
     <button class="btn btn-soft btn-sm schedule-filter__toggle" type="button" data-bs-toggle="collapse" data-bs-target="#filtersCollapse" aria-expanded="false" aria-controls="filtersCollapse">
       Фільтри
@@ -472,6 +479,7 @@
       </table>
     </div>
   </div>
+
 </div>
 
 <!-- Context menu for shifts -->

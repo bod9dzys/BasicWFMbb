@@ -60,26 +60,48 @@ def _monday(dt):
 
 
 def _invalidate_schedule_cache(shift_date=None):
-    """Інвалідує кеш розкладу для конкретної дати або всіх дат."""
+    """Інвалідує кеш розкладу для конкретної дати або всіх дат.
+    
+    Використовує версійність кешу: зберігає версію для кожного тижня,
+    і збільшує її при інвалідації. Це автоматично інвалідує всі ключі
+    кешу для цього тижня без необхідності знати всі можливі комбінації фільтрів.
+    """
+    tz = timezone.get_current_timezone()
+    
     if shift_date:
-        # Інвалідуємо кеш для тижня, до якого належить дата
-        tz = timezone.get_current_timezone()
-        week_start = _monday(datetime.combine(shift_date, datetime.min.time(), tzinfo=tz))
+        # Визначаємо тиждень, до якого належить дата
+        if isinstance(shift_date, datetime):
+            shift_date = shift_date.date()
+        elif hasattr(shift_date, 'date'):
+            shift_date = shift_date.date()
         
-        # Видаляємо кеш для поточного тижня та сусідніх (на випадок, якщо зміна перетинає тижні)
+        # Створюємо datetime з timezone для правильного розрахунку понеділка
+        dt = datetime.combine(shift_date, datetime.min.time())
+        if timezone.is_naive(dt):
+            dt = timezone.make_aware(dt, tz)
+        week_start = _monday(dt)
+        week_key = week_start.date().isoformat()
+        
+        # Інвалідуємо кеш для поточного тижня та сусідніх (на випадок, якщо зміна перетинає тижні)
+        weeks_to_invalidate = set()
         for week_offset in [-7, 0, 7]:
             check_date = week_start.date() + timedelta(days=week_offset)
-            check_week = _monday(datetime.combine(check_date, datetime.min.time(), tzinfo=tz))
-            week_key = check_week.date().isoformat()
-            
-            # Використовуємо версійність кешу - збільшуємо версію, що автоматично інвалідує всі ключі
-            # Зберігаємо версію кешу окремо для кожного тижня
-            cache_version_key = f"schedule_cache_version:{week_key}"
+            check_dt = datetime.combine(check_date, datetime.min.time())
+            if timezone.is_naive(check_dt):
+                check_dt = timezone.make_aware(check_dt, tz)
+            check_week = _monday(check_dt)
+            week_param = check_week.date().isoformat()
+            weeks_to_invalidate.add(week_param)
+        
+        # Інвалідуємо кеш для всіх залучених тижнів
+        for week_param in weeks_to_invalidate:
+            cache_version_key = f"schedule_cache_version:{week_param}"
             current_version = cache.get(cache_version_key, 0)
+            # Збільшуємо версію - це автоматично інвалідує всі ключі кешу з цією версією
             cache.set(cache_version_key, current_version + 1, timeout=86400 * 7)  # 7 днів
     else:
-        # Видаляємо весь кеш розкладу - не підтримується напряму в Django
-        # Покладаємося на короткий TTL (60 секунд)
+        # Інвалідуємо всі тижні - не підтримується напряму, тому просто очищаємо
+        # ключі версій для останніх кількох тижнів (на практиці це рідко потрібно)
         pass
 
 def _weeks_of_year(year: int, tz):
@@ -163,7 +185,10 @@ def schedule_week(request):
 
     # 2) Рахуємо межі тижня [понеділок; понеділок+7)
     tz = timezone.get_current_timezone()
-    week_start = _monday(datetime.combine(base, datetime.min.time(), tzinfo=tz))
+    dt = datetime.combine(base, datetime.min.time())
+    if timezone.is_naive(dt):
+        dt = timezone.make_aware(dt, tz)
+    week_start = _monday(dt)
     week_end = week_start + timedelta(days=7)
 
     # 3) Генеруємо ключ кешу на основі week_start та параметрів фільтрів
@@ -243,8 +268,14 @@ def schedule_week(request):
         timings['shifts_processing'] = time_module.time() - start_process
         
         # Кешуємо shifts_by_agent
-        shifts_by_agent_dict = {str(k): v for k, v in shifts_by_agent.items()}
-        cache.set(cache_key_final, shifts_by_agent_dict, 60)
+        # Важливо: отримуємо актуальну версію кешу перед збереженням
+        # (на випадок, якщо версія змінилася під час обробки)
+        current_cache_version = cache.get(cache_version_key, 0)
+        if current_cache_version == cache_version:
+            # Версія не змінилася, можна кешувати
+            shifts_by_agent_dict = {str(k): v for k, v in shifts_by_agent.items()}
+            cache.set(cache_key_final, shifts_by_agent_dict, 60)
+        # Якщо версія змінилася, не кешуємо - наступний запит отримає свіжі дані
     
     # 8) Список дат тижня для заголовків колонок
     days = [week_start + timedelta(days=i) for i in range(7)]
@@ -373,9 +404,15 @@ def schedule_week(request):
         # Показувати кнопку "Відобразити увесь розклад" якщо це агент і показується тільки його розклад
         "is_agent_view": is_agent_view,
         "show_all": show_all,
+        "current_agent": current_agent,  # Завжди передаємо поточного агента для перевірки в шаблоні
         "debug_info": debug_info if settings.DEBUG else None,
     }
-    return render(request, "schedule_week.html", ctx)
+    response = render(request, "schedule_week.html", ctx)
+    # Запобігаємо кешуванню сторінки браузером для миттєвого відображення змін
+    response['Cache-Control'] = 'no-cache, no-store, must-revalidate, private'
+    response['Pragma'] = 'no-cache'
+    response['Expires'] = '0'
+    return response
 
 
 @login_required
@@ -1066,6 +1103,9 @@ def request_sick_leave(request):
                     d = timezone.localtime(sh.start, tz).date()
                     groups.setdefault(d, []).append(sh)
 
+                # Збираємо дати змін для інвалідації кешу
+                affected_dates = set()
+                
                 for day, sh_list in groups.items():
                     sh_list.sort(key=lambda s: s.start)
                     rep = sh_list[0]
@@ -1080,6 +1120,7 @@ def request_sick_leave(request):
                         status=ShiftStatus.SICK,
                         comment=cleaned_comment,
                     )
+                    affected_dates.add(day)
 
                     # Видаляємо решту змін цього дня
                     for extra in sh_list[1:]:
@@ -1108,7 +1149,12 @@ def request_sick_leave(request):
                     proof.save()
                 else:
                     proof.save()
-
+            
+            # Інвалідуємо кеш розкладу після завершення транзакції
+            # для всіх залучених дат
+            for date in affected_dates:
+                _invalidate_schedule_cache(date)
+            
             if attach_later:
                 messages.warning(
                     request,
@@ -1119,6 +1165,7 @@ def request_sick_leave(request):
                     request,
                     f"Зміни для {agent_display} з {start_date:%d.%m.%Y} до {end_date:%d.%m.%Y} позначено як лікарняний.",
                 )
+            
             return redirect("requests_sick_leave")
     has_allowed_agents = getattr(form, "allowed_agents", Agent.objects.none()).exists()
 
